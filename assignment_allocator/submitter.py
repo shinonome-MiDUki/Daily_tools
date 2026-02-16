@@ -65,9 +65,12 @@ class MyAssigniment:
             used_capsule_name = capsule_list[int(used_capsule)-1] if used_capsule in [f"{j}" for j in range(1,k)] else "default"
         return used_capsule_name
     
-    def diving(searching_folder_dir_input):
+    def diving(searching_folder_dir_input, is_search_for_file=False):
         searching_folder_dir = searching_folder_dir_input
-        target_names = [f.name for f in searching_folder_dir.iterdir() if f.is_dir()]
+        if not is_search_for_file:
+            target_names = [f.name for f in searching_folder_dir.iterdir() if f.is_dir()]
+        else:
+            target_names = [f.name for f in searching_folder_dir.iterdir()]
         i = 1
         for target_name in target_names:
             print(f"{i} : {target_name}")
@@ -266,7 +269,7 @@ class MyAssigniment:
             if meta_data_json[used_capsule_name]["config"]["use_weekday"] == True:
                 dive_layer += 1
             while True:
-                searching_folder_dir = self.diving(searching_folder_dir)
+                searching_folder_dir = self.diving(searching_folder_dir, is_search_for_file=True)
                 proceed_confirmation = str(input("Proceed? (Y/n)"))
                 if proceed_confirmation in ["n", "N"]: break
             
