@@ -65,8 +65,8 @@ class MyAssignment:
             used_capsule_name = capsule_list[int(used_capsule)-1] if used_capsule in [f"{j}" for j in range(1,k)] else "default"
         return used_capsule_name
     
-    def diving(searching_folder_dir_input, is_search_for_file=False):
-        searching_folder_dir = searching_folder_dir_input
+    def diving(self, searching_folder_dir_input, is_search_for_file=False):
+        searching_folder_dir = Path(searching_folder_dir_input)
         if not is_search_for_file:
             target_names = [f.name for f in searching_folder_dir.iterdir() if f.is_dir()]
         else:
@@ -184,7 +184,7 @@ class MyAssignment:
         else:
             set_version(capsule_name)
 
-    def continuation_mode(self, is_renaming=False, versioning=False, open=False, recover_version=False):
+    def continuation_mode(self, is_renaming=False, versioning=False, is_open=False, recover_version=False):
         meta_data_json = self.meta_data_json
         if meta_data_json == {}:
             print("No default assignment folder is set")
@@ -224,7 +224,7 @@ class MyAssignment:
 
             target_folder_dir = searching_folder_dir
             print("-----")
-            print(file)
+            print(f"original path : {file}")
             if renamed_name != "":
                 extension = file.suffix
                 file_name = renamed_name + extension
@@ -233,11 +233,12 @@ class MyAssignment:
             destination = target_folder_dir / file_name
 
             if destination.exists():
+                print(destination)
                 print("This file name already exists. You can choose to overwrite the existing one, do a versioning, or stop moving")
-                reaction = str(input("You can input :\n0 to auto-resolve (default)\1 to stop moving\n2 to rename it\n3 to do a versioning\n4 to overwrite the existing one"))
-                reaction = int(reaction) if reaction not in [str(i) for i in range(0,5)] else 0
+                reaction = str(input("You can input :\n0 to auto-resolve (default)\n1 to stop moving\n2 to rename it\n3 to do a versioning\n4 to overwrite the existing one\ninput→")).strip()
+                reaction = int(reaction) if reaction in [str(i) for i in range(0,5)] else 0
                 if reaction == 0:
-                    file_root_name = file.root
+                    file_root_name = file.stem
                     extension = file.suffix
                     indexing = 1
                     while destination.exists():
@@ -303,7 +304,7 @@ class MyAssignment:
             active_path = Path(versioning_meta_data_json[selected_versioning_collection]["active_path"])
             
             if is_recovering:
-                version_to_recover = int(input("Select a version to recover : "))
+                version_to_recover = str(input("Select a version to recover : "))
                 if version_to_recover not in versioning_meta_data_json[selected_versioning_collection]:
                     print("The designated version does not exist")
                     return
@@ -318,10 +319,10 @@ class MyAssignment:
             if is_recovering:
                 version_to_recover_meta_data = versioning_meta_data_json[selected_versioning_collection][version_to_recover]
                 version_to_recover_path = Path(version_to_recover_meta_data["archived_path"])
-                storing_path = active_path.parent / {version_to_recover_path.name}
+                storing_path = active_path.parent / version_to_recover_path.name
                 shutil.move(version_to_recover_path, storing_path)
             else:
-                if renamed_name != "":
+                if renamed_name == "":
                     storing_path = active_path.parent / Path(file_str).name
                 else:
                     extension = Path(file_str).suffix
@@ -329,10 +330,10 @@ class MyAssignment:
                 shutil.move(Path(file_str), storing_path)
 
             versioning_meta_data_json[selected_versioning_collection]["active_path"] = str(storing_path)
-            versioned_file_data = versioning_meta_data_json[selected_versioning_collection][version_num] 
+            versioned_file_data = versioning_meta_data_json[selected_versioning_collection][str(version_num)] 
             versioned_file_data["archived_path"] = str(archived_path)
             versioned_file_data["versioned_datetime"] = str(datetime.datetime.now())
-            versioning_meta_data_json[selected_versioning_collection][version_num+1] = {
+            versioning_meta_data_json[selected_versioning_collection][str(version_num+1)] = {
                 "original_path" : str(storing_path),
                 "added_datetime" : str(datetime.datetime.now()),
                 "comments" : comment
@@ -361,7 +362,7 @@ class MyAssignment:
                 print("Only MacOS and Windows are supported currently")
                 return
         
-        if open:
+        if is_open:
             opening_file()
         elif recover_version:
             version_file(is_recovering=True)
@@ -393,7 +394,20 @@ class MyAssignment:
             "config": CONFIG
         }
 
-        if not self.meta_data_json == {}:
+        if config_conversation:
+            is_use_weekday = True if str(input("Use the weekday based allocation system? (Y/n) ")) not in ["n", "N"] else False
+            is_include_weekends = False if str(input("Include weekends in your file system? (y/N) ")) not in ["y", "Y"] else True
+            dive_layer = input("Designate the number of dive layer : ")
+            dive_layer = int(dive_layer) if str(dive_layer).isdigit() == True else 1
+            config_items_list = [config_item for config_item in CONFIG]
+            config_dic = {
+                config_items_list[0]: is_use_weekday,
+                config_items_list[1]: is_include_weekends,
+                config_items_list[2]: dive_layer
+            } #"use_weekday", "include_weekends", "dive_layer"
+            meta_data_raw["config"] = config_dic
+
+        if self.meta_data_json == {}:
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
                 json.dump({"default" : meta_data_raw}, f, ensure_ascii=False)
             print("New capsule created")
@@ -405,19 +419,6 @@ class MyAssignment:
             while capsule_name in meta_data_current:
                 print("Capsule name already exists")
                 capsule_name = str(input("Input your new capsule name : "))
-            
-            if config_conversation:
-                is_use_weekday = True if str(input("Use the weekday based allocation system? (Y/n) ")) not in ["n", "N"] else False
-                is_include_weekends = False if str(input("Include weekends in your file system? (y/N) ")) not in ["y", "Y"] else True
-                dive_layer = input("Designate the number of dive layer : ")
-                dive_layer = int(dive_layer) if str(dive_layer).isdigit() == True else 1
-                config_items_list = [config_item for config_item in CONFIG]
-                config_dic = {
-                    config_items_list[0]: is_use_weekday,
-                    config_items_list[1]: is_include_weekends,
-                    config_items_list[2]: dive_layer
-                } #"use_weekday", "include_weekends", "dive_layer"
-                meta_data_raw["config"] = config_dic
 
             make_to_default = str(input("Make to default? (Y/N) : "))
             if make_to_default == "Y":
@@ -529,6 +530,7 @@ class MyAssignment:
                 elif isinstance(origial_value, int):
                     new_value_to_set = input(f"Designate new value for {item_to_set} : ")
                     new_value_to_set = int(new_value_to_set) if str(new_value_to_set).isdigit() else origial_value
+                    meta_data_json[setting_capsule_name]["config"][item_to_set] = new_value_to_set
                 is_contuinue_to_set = False if str(input(f"Edit other settings? (y/N) ")) not in ["y", "Y"] else True
 
             print("Current Settings:")
@@ -549,9 +551,9 @@ mode = str(input("Input 1 for continuation\nInput 2 for versioning\nInput 3 for 
 print("")
 ma = MyAssignment()
 if "1" in mode:
-    ma.continuation_mode(is_renaming="r" in mode, versioning="v" in mode, open="o" in mode)
+    ma.continuation_mode(is_renaming="r" in mode, versioning="v" in mode, is_open="o" in mode, recover_version="c" in mode)
 elif "2" in mode:
-    ma.set_versioning_mode()
+    ma.set_versioning_mode(is_query="q" in mode)
 elif "3" in mode:
     ma.initialization_mode(config_conversation="i" in mode)
 elif "4" in mode:
