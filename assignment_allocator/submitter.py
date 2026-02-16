@@ -15,42 +15,57 @@ DAY_OF_WEEK_REF = {
     "6" : "土",
     "7" : "日"
 }
+CONFIG = {
+    "use_weekday": True,
+    "include_weekends": False,
+    "dive_layer": 1
+}
+CONFIG_CONVENTION = {
+    "use_weekday": "Use the day-of-a-week based allocation system",
+    "include_weekends": "Include weekends in your file system",
+    "dive_layer": "The number of dive layers"
+}
 
 class MyAssigniment:
     def __init__(self):
         self.current_dir = Path(__file__).resolve().parent
         self.meta_data_path = self.current_dir / "myassi_meta.json"
-
-    def continuation_mode(self):
         if not self.meta_data_path.exists():
             print("No default assignment folder is set")
             print("Please set default folder before using")
             return
         try:
             with open(self.meta_data_path, "r", encoding="utf-8") as f:
-                meta_data_json = json.load(f)
+                self.meta_data_json = json.load(f)
         except:
             print("No valid assignment folder is set")
             print("Please set a valid folder before using")
             return
-
-        if len(meta_data_json) == 1:
+        
+    def ask_capsule_name(self):
+        if len(self.meta_data_json) == 1:
             used_capsule_name = "default"
         else:
             k = 1
             capsule_list = []
-            for capsule_name in meta_data_json:
+            for capsule_name in self.meta_data_json:
                 print(f"{k} : {capsule_name}")
                 capsule_list.append(capsule_name)
                 k += 1
-            used_capsule = str(input("Select a capsule to use : "))
+            used_capsule = str(input("Select a capsule: "))
             while used_capsule not in [f"{j}" for j in range(1,k)]:
                 if used_capsule_name == "": 
                     used_capsule_name = "1"
                     break
                 print("Invalid")
-                used_capsule = str(input("Select a capsule to use : "))
+                used_capsule = str(input("Select a capsule: "))
             used_capsule_name = capsule_list[int(used_capsule)-1] if used_capsule in [f"{j}" for j in range(1,k)] else "default"
+        return used_capsule_name
+
+    def continuation_mode(self):
+        meta_data_json = self.meta_data_json
+
+        used_capsule_name = self.ask_capsule_name()
 
         capsule_root_folder_dir = Path(meta_data_json[used_capsule_name]["assi_folder_dir"])
             
@@ -137,11 +152,7 @@ class MyAssigniment:
         meta_data_raw = {
             "assi_folder_dir" : new_folder_dir,
             "capsule_name" : capsule_name,
-            "config": {
-                "use_weekday": True,
-                "include_weekends": False,
-                "dive_layer": 1
-            }
+            "config": CONFIG
         }
 
         if not self.meta_data_path.exists():
@@ -162,11 +173,12 @@ class MyAssigniment:
                 is_include_weekends = False if str(input("Include weekends in your file system? (y/N)")) not in ["y", "Y"] else True
                 dive_layer = input("Designate the number of dive layer")
                 dive_layer = int(dive_layer) if str(dive_layer).isdigit() == True else 1
+                config_items_list = [config_item for config_item in CONFIG]
                 config_dic = {
-                    "use_weekday": is_use_weekday,
-                    "include_weekends": is_include_weekends,
-                    "dive_layer": dive_layer
-                }
+                    config_items_list[0]: is_use_weekday,
+                    config_items_list[1]: is_include_weekends,
+                    config_items_list[2]: dive_layer
+                } #"use_weekday", "include_weekends", "dive_layer"
                 meta_data_raw["config"] = config_dic
 
             make_to_default = str(input("Make to default? (Y/N) : "))
@@ -250,12 +262,39 @@ class MyAssigniment:
                     confirmation = str(input("Please confirm the directory of your new assignment folder (Y/N) : "))
                 meta_data_json[used_capsule_name]["assi_folder_dir"] = new_assi_dir
                 
-            print(type(meta_data_json))
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data_json, f, ensure_ascii=False)
 
         elif setting_item_selected == "4":
-            pass
+            meta_data_json = self.meta_data_json
+            setting_capsule_name = self.ask_capsule_name()
+            print("Current Settings:")
+            k = 1
+            config_items = []
+            for config_item in CONFIG_CONVENTION:
+                origial_value = meta_data_json[setting_capsule_name]["config"][config_item]
+                print(f"{k} : {config_item} ({CONFIG_CONVENTION[config_item]}) - {origial_value}")
+                config_items.append(config_item)
+                k + 1
+            is_contuinue_to_set = True
+            while is_contuinue_to_set:
+                item_to_set_idx = str(input(f"Day of week of the lesson (1-{k-1}): "))
+                while item_to_set_idx not in [str(i) for i in range(1,k)]:
+                    print("Invalid")
+                    item_to_set_idx = str(input(f"Day of week of the lesson (1-{k-1}): "))
+                item_to_set = config_items[int(item_to_set_idx)-1]
+                origial_value = meta_data_json[setting_capsule_name]["config"][item_to_set]
+                if isinstance(origial_value, bool):
+                    is_switch = True if str(input(f"Switch {item_to_set} from {origial_value} to {not origial_value}? (Y/n)")) not in ["n", "N"] else False
+                    if is_switch:
+                        meta_data_json[setting_capsule_name]["config"][item_to_set] = not origial_value
+                is_contuinue_to_set = False if str(input(f"Edit other settings? (y/N)")) not in ["y", "Y"] else True
+            print("Current Settings:")
+            for config_item in CONFIG_CONVENTION:
+                new_value = meta_data_json[setting_capsule_name]["config"][config_item]
+                print(f"{k} : {config_item} ({CONFIG_CONVENTION[config_item]}) - {new_value}")
+            with open(self.meta_data_path, "w", encoding="utf-8") as f:
+                json.dump(meta_data_json, f, ensure_ascii=False)
 
         else:
             print("Invalid")
