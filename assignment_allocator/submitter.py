@@ -234,12 +234,20 @@ class MyAssigniment:
 
             if destination.exists():
                 print("This file name already exists. You can choose to overwrite the existing one, do a versioning, or stop moving")
-                reaction = str(input("You can input :0 to stop moving (default)\n\n1 to rename it\n2 to do a versioning\n3 to overwrite the existing one"))
-                reaction = int(reaction) if reaction not in ["0", "1", "2", "3"] else 0
-                if reaction == 0: 
+                reaction = str(input("You can input :\n0 to auto-resolve (default)\1 to stop moving\n2 to rename it\n3 to do a versioning\n4 to overwrite the existing one"))
+                reaction = int(reaction) if reaction not in [str(i) for i in range(0,5)] else 0
+                if reaction == 0:
+                    file_root_name = file.root
+                    extension = file.suffix
+                    indexing = 1
+                    while destination.exists():
+                        file_name = f"{file_root_name}_{indexing}{extension}"
+                        destination = target_folder_dir / file_name
+                        indexing += 1
+                elif reaction == 1: 
                     print("Moving action interupted")
                     return
-                elif reaction == 1:
+                elif reaction == 2:
                     new_name = str(input("Rename: ")).strip()
                     if new_name == "": 
                         print("Moving action interupted")
@@ -251,10 +259,10 @@ class MyAssigniment:
                         print("This file name also exists")
                         print("Moving action interupted")
                         return
-                elif reaction == 2:
+                elif reaction == 3:
                     print("Please restart and select the versioning mode")
                     return
-                elif reaction == 3:
+                elif reaction == 4:
                     pass
                 else:
                     return
