@@ -3,7 +3,8 @@ import json
 import shutil
 import os
 import datetime
-
+import subprocess
+import platform
 
 print("Welcome to MyAssignment")
 print(" ")
@@ -152,7 +153,7 @@ class MyAssigniment:
         with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
             json.dump(versioning_meta_data_json, f, ensure_ascii=False)
 
-    def continuation_mode(self, is_renaming=False, versioning=False):
+    def continuation_mode(self, is_renaming=False, versioning=False, open=False):
         meta_data_json = self.meta_data_json
         if meta_data_json == {}:
             print("No default assignment folder is set")
@@ -258,13 +259,34 @@ class MyAssigniment:
 
             with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
                 json.dump(versioning_meta_data_json, f, ensure_ascii=False)
+
+        def opening_file():
+            dive_layer = meta_data_json[used_capsule_name]["config"]["dive_layer"]
+            searching_layer = 1
+            if meta_data_json[used_capsule_name]["config"]["use_weekday"] == True:
+                dive_layer += 1
+            while True:
+                searching_folder_dir = self.diving(searching_folder_dir)
+                proceed_confirmation = str(input("Proceed? (Y/n)"))
+                if proceed_confirmation in ["n", "N"]: break
+            
+            if platform.system() == "Darwin":
+                subprocess.run(["open", "-R", searching_folder_dir])
+            elif platform.system() == "Windows":
+                subprocess.run(["explorer", "/select", searching_folder_dir])
+            else:
+                print("Only MacOS and Windows are supported currently")
+                return
                 
-        your_assi_path = str(input("Drag your assignment here : ")).strip()
-        renamed_name = str(input("Rename as : ")).strip() if is_renaming else ""
-        if not versioning:
-            move_file(your_assi_path, renamed_name)
+        if open:
+            opening_file()
         else:
-            version_file(your_assi_path, renamed_name)
+            your_assi_path = str(input("Drag your assignment here : ")).strip()
+            renamed_name = str(input("Rename as : ")).strip() if is_renaming else ""
+            if not versioning:
+                move_file(your_assi_path, renamed_name)
+            else:
+                version_file(your_assi_path, renamed_name)
 
     def initialization_mode(self, config_conversation=False):
         print("Create new assignment capsule here")
