@@ -11,7 +11,9 @@ DAY_OF_WEEK_REF = {
     "2" : "火",
     "3" : "水",
     "4" : "木",
-    "5" : "金"
+    "5" : "金",
+    "6" : "土",
+    "7" : "日"
 }
 
 class MyAssigniment:
@@ -55,10 +57,14 @@ class MyAssigniment:
         def move_file(file_str):
             file = Path(file_str)
             print(f"Processing : {file}")
-            day_of_week = str(input("Day of week of the lesson (1-5): "))
-            while day_of_week not in ["1", "2", "3", "4", "5"]:
+            allowed_day_of_week = ["1", "2", "3", "4", "5"]
+            if meta_data_json["config"]["include_weekends"] == True:
+                allowed_day_of_week.append("6")
+                allowed_day_of_week.append("7")
+            day_of_week = str(input(f"Day of week of the lesson (1-{allowed_day_of_week[-1]}): "))
+            while day_of_week not in allowed_day_of_week:
                 print("Invalid")
-                day_of_week = str(input("Day of week of the lesson (1-5): "))
+                day_of_week = str(input(f"Day of week of the lesson (1-{allowed_day_of_week[-1]}): "))
             day_of_week = DAY_OF_WEEK_REF[day_of_week]
 
             dow_folder_dir = default_folder_dir / day_of_week
@@ -100,7 +106,7 @@ class MyAssigniment:
         your_assi_path = str(input("Drag your assignment here : ")).strip()
         move_file(your_assi_path)
 
-    def initialization_mode(self):
+    def initialization_mode(self, config_conversation=False):
         print("Create new assignment capsule here")
         new_folder_dir = str(input("Input a directory for your new assignment folder : "))
         print(f"Confirmarion : {new_folder_dir}")
@@ -116,7 +122,11 @@ class MyAssigniment:
 
         meta_data_raw = {
             "assi_folder_dir" : new_folder_dir,
-            "capsule_name" : capsule_name
+            "capsule_name" : capsule_name,
+            "config": {
+                "use_weekday": True,
+                "include_weekends": False
+            }
         }
 
         if not self.meta_data_path.exists():
@@ -131,6 +141,16 @@ class MyAssigniment:
             while capsule_name in meta_data_current:
                 print("Capsule name already exists")
                 capsule_name = str(input("Input your new capsule name : "))
+            
+            if config_conversation:
+                is_use_weekday = True if str(input("Use the weekday based allocation system? (Y/n)")) not in ["n", "N"] else False
+                is_include_weekends = False if str(input("Include weekends in your file system? (y/N)")) not in ["y", "Y"] else True
+                config_dic = {
+                    "use_weekday": is_use_weekday,
+                    "include_weekends": is_include_weekends
+                }
+                meta_data_raw["config"] = config_dic
+
             make_to_default = str(input("Make to default? (Y/N) : "))
             if make_to_default == "Y":
                 current_default = meta_data_current["default"]
@@ -224,6 +244,8 @@ if mode == "1":
     ma.continuation_mode()
 elif mode == "2":
     ma.initialization_mode()
+elif mode == "2i":
+    ma.initialization_mode(config_conversation=True)
 elif mode == "3":
     ma.settings_mode()
 else:
