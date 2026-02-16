@@ -52,55 +52,69 @@ class MyAssigniment:
                 used_capsule = str(input("Select a capsule to use : "))
             used_capsule_name = capsule_list[int(used_capsule)-1] if used_capsule in [f"{j}" for j in range(1,k)] else "default"
 
-        default_folder_dir = Path(meta_data_json[used_capsule_name]["assi_folder_dir"])
+        capsule_root_folder_dir = Path(meta_data_json[used_capsule_name]["assi_folder_dir"])
             
         def move_file(file_str):
             file = Path(file_str)
             print(f"Processing : {file}")
-            allowed_day_of_week = ["1", "2", "3", "4", "5"]
-            if meta_data_json["config"]["include_weekends"] == True:
-                allowed_day_of_week.append("6")
-                allowed_day_of_week.append("7")
-            day_of_week = str(input(f"Day of week of the lesson (1-{allowed_day_of_week[-1]}): "))
-            while day_of_week not in allowed_day_of_week:
-                print("Invalid")
+
+            if meta_data_json[used_capsule_name]["config"]["use_weekday"]:
+                allowed_day_of_week = ["1", "2", "3", "4", "5"]
+                if meta_data_json[used_capsule_name]["config"]["include_weekends"] == True:
+                    allowed_day_of_week.append("6")
+                    allowed_day_of_week.append("7")
                 day_of_week = str(input(f"Day of week of the lesson (1-{allowed_day_of_week[-1]}): "))
-            day_of_week = DAY_OF_WEEK_REF[day_of_week]
+                while day_of_week not in allowed_day_of_week:
+                    print("Invalid")
+                    day_of_week = str(input(f"Day of week of the lesson (1-{allowed_day_of_week[-1]}): "))
+                day_of_week = DAY_OF_WEEK_REF[day_of_week]
 
-            dow_folder_dir = default_folder_dir / day_of_week
-            if not dow_folder_dir.exists():
-                dow_folder_dir.mkdir(parents=True, exist_ok=True)
-
-            lesson_names = [f.name for f in dow_folder_dir.iterdir() if f.is_dir()]
-            i = 1
-            for lesson_name in lesson_names:
-                print(f"{i} : {lesson_name}")
-                i += 1
-            print(f"{i} : Add new lesson")
-            lesson_selected = str(input("Select lesson to submit : "))
-            while lesson_selected not in [f"{j}" for j in range(1,i+1)] and "_" not in lesson_selected:
-                print("Invalid")
-                lesson_selected = str(input("Select lesson to submit : "))
-            
-            if lesson_selected == f"{i}":
-                lesson_name_to_add = str(input("Input lesson name to add : "))
-                lesson_dir_to_make = dow_folder_dir / lesson_name_to_add
-                lesson_dir_to_make.mkdir(parents=True, exist_ok=True)
-                lesson_names.append(lesson_name_to_add)
-            
-            if "_" in lesson_selected:
-                lesson_selected_break = lesson_selected.split("_")
-                lesson_selected = lesson_selected_break[0]
-                folder_in_lesson_dir = dow_folder_dir / lesson_selected_break[-1]
-                folder_in_lesson_dir.mkdir(parents=True, exist_ok=True)
-                lesson_folder_dir = folder_in_lesson_dir / lesson_names[int(lesson_selected)-1]
+                searching_folder_dir = capsule_root_folder_dir / day_of_week
+                if not searching_folder_dir.exists():
+                    searching_folder_dir.mkdir(parents=True, exist_ok=True)
             else:
-                lesson_folder_dir = dow_folder_dir / lesson_names[int(lesson_selected)-1]
+                searching_folder_dir = capsule_root_folder_dir
 
+            dive_layer = meta_data_json[used_capsule_name]["config"]["dive_layer"]
+            searching_layer = 1
+            while searching_layer <= dive_layer:
+                target_names = [f.name for f in searching_folder_dir.iterdir() if f.is_dir()]
+                i = 1
+                for target_name in target_names:
+                    print(f"{i} : {target_name}")
+                    i += 1
+                print(f"{i} : Add new lesson")
+                target_selected = str(input("Select lesson to submit : "))
+                while target_selected not in [f"{j}" for j in range(1,i+1)] and "_" not in target_selected:
+                    print("Invalid")
+                    target_selected = str(input("Select lesson to submit : "))
+                
+                if target_selected == f"{i}":
+                    target_name_to_add = str(input("Input lesson name to add : "))
+                    target_dir_to_make = searching_folder_dir / target_name_to_add
+                    target_dir_to_make.mkdir(parents=True, exist_ok=True)
+                    target_names.append(target_name_to_add)
+                
+                if "_" in target_selected:
+                    try:
+                        target_selected_break = target_selected.split("_")
+                        target_selected = target_selected_break[0]
+                        searching_folder_dir = searching_folder_dir / target_names[int(target_selected)-1]
+                        searching_folder_dir = searching_folder_dir / target_selected_break[-1]
+                        searching_folder_dir.mkdir(parents=True, exist_ok=True)
+                    except:
+                        print("Invalid Input")
+                        return
+                else:
+                    searching_folder_dir = searching_folder_dir / target_names[int(target_selected)-1]
+                
+                searching_layer += 1
+
+            target_folder_dir = searching_folder_dir
             print("-----")
             print(file)
-            print(lesson_folder_dir / file_str.split("/")[-1])
-            shutil.move(file, lesson_folder_dir / file_str.split("/")[-1])
+            print(target_folder_dir / file_str.split("/")[-1])
+            shutil.move(file, target_folder_dir / file_str.split("/")[-1])
             print("Successful")
                 
         your_assi_path = str(input("Drag your assignment here : ")).strip()
@@ -125,7 +139,8 @@ class MyAssigniment:
             "capsule_name" : capsule_name,
             "config": {
                 "use_weekday": True,
-                "include_weekends": False
+                "include_weekends": False,
+                "dive_layer": 1
             }
         }
 
@@ -145,9 +160,12 @@ class MyAssigniment:
             if config_conversation:
                 is_use_weekday = True if str(input("Use the weekday based allocation system? (Y/n)")) not in ["n", "N"] else False
                 is_include_weekends = False if str(input("Include weekends in your file system? (y/N)")) not in ["y", "Y"] else True
+                dive_layer = input("Designate the number of dive layer")
+                dive_layer = int(dive_layer) if str(dive_layer).isdigit() == True else 1
                 config_dic = {
                     "use_weekday": is_use_weekday,
-                    "include_weekends": is_include_weekends
+                    "include_weekends": is_include_weekends,
+                    "dive_layer": dive_layer
                 }
                 meta_data_raw["config"] = config_dic
 
@@ -174,7 +192,8 @@ class MyAssigniment:
         SETTING_ITEMS = {
             "1" : "change default",
             "2" : "change client folder",
-            "3" : "change assignment folder"
+            "3" : "change assignment folder", 
+            "4" : "edit configurations"
         }
         for setting_item in SETTING_ITEMS:
             print(f"{setting_item} : {SETTING_ITEMS[setting_item]}")
@@ -189,6 +208,7 @@ class MyAssigniment:
 
         if setting_item_selected == "1":
             pass
+
         elif setting_item_selected == "2" or setting_item_selected == "3":
             with open(self.meta_data_path, "r", encoding="utf-8") as f:
                 meta_data_json = json.load(f)
@@ -233,6 +253,10 @@ class MyAssigniment:
             print(type(meta_data_json))
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data_json, f, ensure_ascii=False)
+
+        elif setting_item_selected == "4":
+            pass
+
         else:
             print("Invalid")
             pass

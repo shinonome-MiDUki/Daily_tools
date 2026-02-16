@@ -4,7 +4,8 @@
         "capsule_name": "AutumnSem",
         "config": {
             "use_weekday": true,
-            "include_weekends": false
+            "include_weekends": false,
+            "dive_layer": 1
         }
         
     },
@@ -13,7 +14,8 @@
         "capsule_name": "WinterSem",
         "config": {
             "use_weekday": true,
-            "include_weekends": false
+            "include_weekends": false,
+            "dive_layer": 1
         }
     }
 }
