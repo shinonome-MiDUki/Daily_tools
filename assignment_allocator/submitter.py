@@ -275,13 +275,13 @@ class MyAssigniment:
                 origial_value = meta_data_json[setting_capsule_name]["config"][config_item]
                 print(f"{k} : {config_item} ({CONFIG_CONVENTION[config_item]}) - {origial_value}")
                 config_items.append(config_item)
-                k + 1
+                k += 1
             is_contuinue_to_set = True
             while is_contuinue_to_set:
-                item_to_set_idx = str(input(f"Day of week of the lesson (1-{k-1}): "))
+                item_to_set_idx = str(input(f"Item to set (1-{k-1}): "))
                 while item_to_set_idx not in [str(i) for i in range(1,k)]:
                     print("Invalid")
-                    item_to_set_idx = str(input(f"Day of week of the lesson (1-{k-1}): "))
+                    item_to_set_idx = str(input(f"Item to set (1-{k-1}): "))
                 item_to_set = config_items[int(item_to_set_idx)-1]
                 origial_value = meta_data_json[setting_capsule_name]["config"][item_to_set]
                 if isinstance(origial_value, bool):
@@ -289,7 +289,9 @@ class MyAssigniment:
                     if is_switch:
                         meta_data_json[setting_capsule_name]["config"][item_to_set] = not origial_value
                 is_contuinue_to_set = False if str(input(f"Edit other settings? (y/N)")) not in ["y", "Y"] else True
+
             print("Current Settings:")
+            k = 1
             for config_item in CONFIG_CONVENTION:
                 new_value = meta_data_json[setting_capsule_name]["config"][config_item]
                 print(f"{k} : {config_item} ({CONFIG_CONVENTION[config_item]}) - {new_value}")
@@ -302,6 +304,7 @@ class MyAssigniment:
 
 
 mode = str(input("Input 1 for continuation\nInput 2 for initialization\nInput 3 for settings\n→input : "))
+print("")
 ma = MyAssigniment()
 if mode == "1":
     ma.continuation_mode()
@@ -314,3 +317,6 @@ elif mode == "3":
 else:
     print("Invalid mode")
     pass
+print("")
+
+# cd /Users/shiinaayame/Documents/Daily_tools/assignment_allocator ; python3 submitter.py
