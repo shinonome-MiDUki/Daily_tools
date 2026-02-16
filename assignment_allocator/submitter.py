@@ -29,7 +29,7 @@ CONFIG_CONVENTION = {
     "dive_layer": "The number of dive layers"
 }
 
-class MyAssigniment:
+class MyAssignment:
     def __init__(self):
         self.current_dir = Path(__file__).resolve().parent
         self.meta_data_path = self.current_dir / "myassi_meta.json"
@@ -547,7 +547,7 @@ class MyAssigniment:
 
 mode = str(input("Input 1 for continuation\nInput 2 for versioning\nInput 3 for initialization\nInput 4 for settings\n→input : "))
 print("")
-ma = MyAssigniment()
+ma = MyAssignment()
 if "1" in mode:
     ma.continuation_mode(is_renaming="r" in mode, versioning="v" in mode, open="o" in mode)
 elif "2" in mode:
