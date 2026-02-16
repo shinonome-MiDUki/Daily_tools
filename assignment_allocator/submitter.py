@@ -226,12 +226,41 @@ class MyAssigniment:
             print("-----")
             print(file)
             if renamed_name != "":
-                extension = Path(file_str).suffix
+                extension = file.suffix
                 file_name = renamed_name + extension
             else:
-                file_name = Path(file_str).name
-            print(target_folder_dir / file_name)
-            shutil.move(file, target_folder_dir / file_name)
+                file_name =file.name
+            destination = target_folder_dir / file_name
+
+            if destination.exists():
+                print("This file name already exists. You can choose to overwrite the existing one, do a versioning, or stop moving")
+                reaction = str(input("You can input :0 to stop moving (default)\n\n1 to rename it\n2 to do a versioning\n3 to overwrite the existing one"))
+                reaction = int(reaction) if reaction not in ["0", "1", "2", "3"] else 0
+                if reaction == 0: 
+                    print("Moving action interupted")
+                    return
+                elif reaction == 1:
+                    new_name = str(input("Rename: ")).strip()
+                    if new_name == "": 
+                        print("Moving action interupted")
+                        return
+                    extension = file.suffix
+                    file_name = new_name + extension
+                    destination = target_folder_dir / file_name
+                    if destination.exists():
+                        print("This file name also exists")
+                        print("Moving action interupted")
+                        return
+                elif reaction == 2:
+                    print("Please restart and select the versioning mode")
+                    return
+                elif reaction == 3:
+                    pass
+                else:
+                    return
+                    
+            shutil.move(file, destination)
+            print(f"Moved to {destination}")
             print("Successful")
 
         def version_file(file_str=None, renamed_name=None, is_recovering=False):
@@ -275,14 +304,13 @@ class MyAssigniment:
             comment = None if comment == "" else comment
             
             version_num = len(versioning_meta_data_json[selected_versioning_collection])-1
-            archive_file_name = f"{active_path.name}_ver{version_num}{active_path.suffix}"
+            archive_file_name = f"{active_path.stem}_ver{version_num}{active_path.suffix}"
             archived_path = version_dir / archive_file_name
             shutil.move(active_path, archived_path)
             if is_recovering:
                 version_to_recover_meta_data = versioning_meta_data_json[selected_versioning_collection][version_to_recover]
                 version_to_recover_path = Path(version_to_recover_meta_data["archived_path"])
-                extension = version_to_recover_path.suffix
-                storing_path = active_path.parent / f"{version_to_recover_path.name}{extension}"
+                storing_path = active_path.parent / {version_to_recover_path.name}
                 shutil.move(version_to_recover_path, storing_path)
             else:
                 if renamed_name != "":
@@ -325,13 +353,10 @@ class MyAssigniment:
                 print("Only MacOS and Windows are supported currently")
                 return
         
-        def recovering_version():
-            pass
-                
         if open:
             opening_file()
         elif recover_version:
-            recovering_version()
+            version_file(is_recovering=True)
         else:
             your_assi_path = str(input("Drag your assignment here : ")).strip()
             renamed_name = str(input("Rename as : ")).strip() if is_renaming else ""
