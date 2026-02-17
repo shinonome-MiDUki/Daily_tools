@@ -76,10 +76,15 @@ class MyAssignment:
             i += 1
         print(f"{i} : Add new folder")
         target_selected = str(input("Select a folder : "))
-        while target_selected not in [f"{j}" for j in range(1,i+1)] and "_" not in target_selected:
+        while (target_selected not in [f"{j}" for j in range(1,i+1)] 
+               and "_" not in target_selected 
+               and "t" not in target_selected):
             print("Invalid")
             target_selected = str(input("Select a folder : "))
         
+        if "t" in target_selected:
+            return searching_folder_dir
+
         if target_selected == f"{i}":
             target_name_to_add = str(input("Input the folder name to add : "))
             target_dir_to_make = searching_folder_dir / target_name_to_add
@@ -117,7 +122,10 @@ class MyAssignment:
                 dive_layer += 1
             searching_folder_dir = capsule_root_folder_dir
             while searching_layer <= dive_layer:
+                before_searching_folder_dir = searching_folder_dir
                 searching_folder_dir = self.diving(searching_folder_dir)
+                if before_searching_folder_dir == searching_folder_dir:
+                    break
                 searching_layer += 1
             target_file_names = [f.name for f in searching_folder_dir.iterdir()]
             i = 1
@@ -219,7 +227,15 @@ class MyAssignment:
         else:
             set_version(capsule_name)
 
-    def continuation_mode(self, is_renaming=False, versioning=False, is_open=False, recover_version=False, open_latest=False):
+    def continuation_mode(
+            self, 
+            is_renaming=False, 
+            versioning=False, 
+            is_open=False, 
+            recover_version=False, 
+            open_latest=False, 
+            copy_and_move=False
+            ):
         meta_data_json = self.meta_data_json
         if len(meta_data_json) == 1:
             print("No default assignment folder is set")
@@ -254,7 +270,10 @@ class MyAssignment:
             dive_layer = meta_data_json[used_capsule_name]["config"]["dive_layer"]
             searching_layer = 1
             while searching_layer <= dive_layer:
+                before_searching_folder_dir = searching_folder_dir
                 searching_folder_dir = self.diving(searching_folder_dir)
+                if before_searching_folder_dir == searching_folder_dir:
+                    break
                 searching_layer += 1
 
             target_folder_dir = searching_folder_dir
@@ -302,8 +321,11 @@ class MyAssignment:
                     pass
                 else:
                     return
-                    
-            shutil.move(file, destination)
+
+            if copy_and_move:
+                shutil.copy2(file, destination)
+            else:     
+                shutil.move(file, destination)
             print(f"Moved to {destination}")
             print("Successful")
             return str(destination)
@@ -390,7 +412,10 @@ class MyAssignment:
                 if meta_data_json[used_capsule_name]["config"]["use_weekday"] == True:
                     dive_layer += 1
                 while True:
+                    before_searching_folder_dir = searching_folder_dir
                     searching_folder_dir = self.diving(searching_folder_dir, is_search_for_file=True)
+                    if before_searching_folder_dir == searching_folder_dir:
+                        break
                     if searching_folder_dir.is_file(): break
                     proceed_confirmation = str(input("Proceed? (Y/n)"))
                     if proceed_confirmation in ["n", "N"]: break
@@ -607,8 +632,14 @@ class MyAssignment:
             print("Invalid")
             pass
 
-
-mode = str(input("Input 1 for continuation\nInput 2 for versioning\nInput 3 for initialization\nInput 4 for settings\n→input : "))
+mode_explanation = """Input 
+1 : continuation
+2 : versioning
+3 : initialization
+4 : settings
+→input : 
+"""
+mode = str(input(mode_explanation))
 print("")
 ma = MyAssignment()
 
@@ -619,7 +650,8 @@ if "1" in mode:
         versioning="v" in mode, 
         is_open="o" in mode, 
         recover_version="c" in mode, 
-        open_latest="l" in mode
+        open_latest="l" in mode,
+        copy_and_move="p" in mode
         )
 elif "2" in mode:
     ma.set_versioning_mode(
@@ -642,9 +674,9 @@ print("")
 TODOS:
 1 in initialization, confirm no files are set to client folder 
 2 avoid user from chooing app config which is not a capsule name 
-3 allow users to choose to copy and move 
-4 allow users to terminate diving 
-5 strengthen mode input check (now, for eg cat1 will also be treated as 1 and c in mode) 
+3 allow users to choose to copy and move * 
+4 allow users to terminate diving * 
+5 strengthen mode input check (now, for eg cat1 will also be treated as 1 and c in mode) * 
 6 the capsulename_versioning folder is not a normal folder so hide it in menu 
 7 Space is accidentialy added the the collection dir name when setting 
 8 allow users to alter names of folders and files without crashing the app 
