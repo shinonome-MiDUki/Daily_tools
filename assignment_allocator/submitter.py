@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 import shutil
 import os
+import sys
 import datetime
 import subprocess
 import platform
@@ -31,6 +32,7 @@ CONFIG_CONVENTION = {
 
 class MyAssignment:
     def __init__(self):
+        self.my_path = Path(__file__).resolve()
         self.current_dir = Path(__file__).resolve().parent
         self.meta_data_path = self.current_dir / "myassi_meta.json"
         if not self.meta_data_path.exists():
@@ -346,6 +348,7 @@ class MyAssignment:
 
         def opening_file():
             dive_layer = meta_data_json[used_capsule_name]["config"]["dive_layer"]
+            searching_folder_dir = meta_data_json[used_capsule_name]["assi_folder_dir"]
             searching_layer = 1
             if meta_data_json[used_capsule_name]["config"]["use_weekday"] == True:
                 dive_layer += 1
@@ -444,7 +447,8 @@ class MyAssignment:
             "1" : "change default",
             "2" : "change client folder",
             "3" : "change assignment folder", 
-            "4" : "edit configurations"
+            "4" : "edit configurations",
+            "5" : "update"
         }
         for setting_item in SETTING_ITEMS:
             print(f"{setting_item} : {SETTING_ITEMS[setting_item]}")
@@ -541,6 +545,11 @@ class MyAssignment:
                 k += 1
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+
+        elif setting_item_selected == "5":
+            from updater import update_from_git
+            update_from_git(self.current_dir, self.my_path)
+            exit()
 
         else:
             print("Invalid")
