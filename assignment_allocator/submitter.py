@@ -101,7 +101,7 @@ class MyAssignment:
 
         return searching_folder_dir
     
-    def set_versioning_mode(self, capsule_name=None, is_query=False):
+    def set_versioning_mode(self, capsule_name=None, is_query=False, is_clear=False):
         def set_version(capsule_name):
             meta_data_json = self.meta_data_json
             target_capsule_name = self.ask_capsule_name() if capsule_name == None else capsule_name
@@ -213,6 +213,8 @@ class MyAssignment:
 
         if is_query:
             query_version()
+        elif is_clear:
+            clear_collection()
         else:
             set_version(capsule_name)
 
@@ -617,7 +619,8 @@ if "1" in mode:
         )
 elif "2" in mode:
     ma.set_versioning_mode(
-        is_query="q" in mode
+        is_query="q" in mode,
+        is_clear="c" in mode
         )
 elif "3" in mode:
     ma.initialization_mode(
