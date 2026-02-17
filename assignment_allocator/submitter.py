@@ -165,6 +165,7 @@ class MyAssignment:
             }
             with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
                 json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
+            print(f"Successfully set up versioning collection : {versioning_collection_alias}")
             
         def clear_collection():
             target_capsule_name = self.ask_capsule_name()
@@ -190,6 +191,10 @@ class MyAssignment:
                 print("Invalid")
                 target_selected = str(input("Select a versioning collection : "))
             selected_versioning_collection = versioning_collections[int(target_selected)-1]
+            confirmation = str(input(f"Clearing versioning collection {selected_versioning_collection}. Confirm? (y/N) "))
+            if confirmation not in ["y", "Y"]:
+                print("Clearinf action cancelled")
+                return
             active_path = Path(versioning_meta_data_json[selected_versioning_collection]["active_path"])
             version_data = versioning_meta_data_json[selected_versioning_collection]
             for version_name in version_data:
@@ -200,9 +205,12 @@ class MyAssignment:
             del versioning_meta_data_json[selected_versioning_collection]
             with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
                 json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
+            print(f"Successfully cleared versioning collection : {selected_versioning_collection}")
 
         def query_version():
-            keyword = str(input("Search : ")).strip()
+            searching_words = str(input("Search : ")).strip().split("_")
+            keyword = searching_words[0]
+            search_options = searching_words[1:] if len(searching_words) > 1 else []
             meta_data_json = self.meta_data_json
             target_capsule_name = self.ask_capsule_name() if capsule_name == None else capsule_name
             capsule_root_folder_dir = meta_data_json[target_capsule_name]["assi_folder_dir"]
@@ -212,15 +220,36 @@ class MyAssignment:
             if versioning_meta_data_json_path.exists():
                 with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
                     versioning_meta_data_json = json.load(f)
-                if keyword == "":
-                    print(versioning_meta_data_json)
-                else:
-                    for versioning_collection in versioning_meta_data_json:
-                        if keyword.lower() in str(versioning_collection).lower():
-                            collection_info = {
-                                versioning_collection : versioning_meta_data_json[versioning_collection]
-                                }
-                            print(collection_info)
+                if versioning_meta_data_json == {}:
+                    print("No versioning data found")
+                    return
+
+                is_have_something_matched_kw = False
+                for versioning_collection in versioning_meta_data_json:
+                    if keyword != "" and keyword.lower() not in str(versioning_collection).lower():
+                        continue
+                    is_have_something_matched_kw = True
+                    print(f"{versioning_collection} : ")
+                    collection_data = versioning_meta_data_json[versioning_collection]
+                    for version in versioning_meta_data_json[versioning_collection]:
+                        if version == "active_path":
+                            print(f"Active path : {collection_data["active_path"]}")
+                        else:
+                            print(f"Version {version} : ")
+                            version_data = collection_data[version]
+                            for data_item in version_data:
+                                if search_options:
+                                    for search_option in search_options:
+                                        if search_option.lower() in str(data_item).lower():
+                                            print(f"   {data_item} : {version_data[data_item]}")
+                                            break
+                                else:
+                                    print(f"   {data_item} : {version_data[data_item]}")
+                                    
+                    print("-----")
+                if not is_have_something_matched_kw:
+                    print("No matching versioning collection")
+                        
             else:
                 print("No versioning data found")
                 return
@@ -406,6 +435,7 @@ class MyAssignment:
 
             with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
                 json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
+            print("File versioned successfully")
 
             return str(storing_path)
 
@@ -534,11 +564,11 @@ class MyAssignment:
     def settings_mode(self):
         SETTING_ITEMS = {
             "1" : "change default",
-            "2" : "change client folder",
-            "3" : "change assignment folder", 
-            "4" : "edit configurations",
-            "5" : "update"
+            "2" : "change assignment folder", 
+            "3" : "edit configurations",
+            "4" : "update"
         }
+        meta_data_json = self.meta_data_json
         for setting_item in SETTING_ITEMS:
             print(f"{setting_item} : {SETTING_ITEMS[setting_item]}")
         setting_item_selected = str(input("Choose a setting item : "))
@@ -546,58 +576,54 @@ class MyAssignment:
             print("Invalid")
             setting_item_selected = str(input("Choose a setting item : "))
 
-        if setting_item_selected == "2":
-            print("Mode 2 has been deprecated")
-            return
+        if setting_item_selected in ["1", "2"]:
+            if len(meta_data_json) == 1:
+                print("There is no capsule to set")
+                return
 
         if setting_item_selected == "1":
-            pass
-
-        elif setting_item_selected == "2" or setting_item_selected == "3":
-            with open(self.meta_data_path, "r", encoding="utf-8") as f:
-                meta_data_json = json.load(f)
-
-            if len(meta_data_json) == 1:
-                used_capsule_name = "default"
-            else:
-                k = 1
-                capsule_list = []
-                for capsule_name in meta_data_json:
-                    print(f"{k} : {capsule_name}")
-                    capsule_list.append(capsule_name)
-                    k += 1
-                used_capsule = str(input("Select a capsule to use : "))
-                while used_capsule not in [f"{j}" for j in range(1,k)]:
-                    if used_capsule_name == "": break
-                    print("Invalid")
-                    used_capsule = str(input("Select a capsule to use : "))
-                used_capsule_name = capsule_list[int(used_capsule)-1] if used_capsule in [f"{j}" for j in range(1,k)] else "default" 
-            
-            print(f"Processing : {used_capsule_name}")
-
-            if setting_item_selected == "2":
-                new_client_dir = Path(str(input("Input new client directory : ")))
-                print(f"Confirmation : {new_client_dir}")
-                confirmation = str(input("Please confirm the directory of your new client folder (Y/N) : "))
-                while confirmation != "Y":
-                    new_client_dir = Path(str(input("Input new client directory : ")))
-                    print(f"Confirmation : {new_client_dir}")
-                    confirmation = str(input("Please confirm the directory of your new client folder (Y/N) : "))
-                meta_data_json[used_capsule_name]["client_folder_dir"] = new_client_dir
-            elif setting_item_selected == "3":
-                new_assi_dir = Path(str(input("Input new assignment directory : ")))
-                print(f"Confirmation : {new_assi_dir}")
-                confirmation = str(input("Please confirm the directory of your new assignment folder (Y/N) : "))
-                while confirmation != "Y":
-                    new_client_dir = Path(str(input("Input new assignment directory : ")))
-                    print(f"Confirmation : {new_assi_dir}")
-                    confirmation = str(input("Please confirm the directory of your new assignment folder (Y/N) : "))
-                meta_data_json[used_capsule_name]["assi_folder_dir"] = new_assi_dir
-                
+            if len(meta_data_json) == 2:
+                print("There is only one capsule which is already in default")
+                return
+            setting_capsule_name = self.ask_capsule_name()
+            if setting_capsule_name == "default":
+                print("The selected capsule is already in default")
+                return
+            current_default_capsule_real_name = meta_data_json["default"]["capsule_name"]
+            meta_data_json[current_default_capsule_real_name] = meta_data_json["default"]
+            meta_data_json["default"] = meta_data_json[setting_capsule_name]
+            del meta_data_json[setting_capsule_name]
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                json.dump(meta_data_json, f, ensure_ascii=False)
+                json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+            print(f"Successfully set {setting_capsule_name} to default")
 
-        elif setting_item_selected == "4":
+        elif setting_item_selected == "2":
+            setting_capsule_name = self.ask_capsule_name()
+            new_folder_dir = str(input("Input the new directory for your assignment folder : ")).strip()
+            is_confirmed = False
+            while not is_confirmed:
+                new_folder_dir = str(input("Input the new directory for your assignment folder : ")).strip()
+                if Path(new_folder_dir).is_dir():
+                    print(f"Confirmarion : {new_folder_dir}")
+                    confirmation = str(input("Please confirm the directory of your new assignment folder (Y/n) : "))
+                    is_confirmed = False if confirmation in ["n", "N"] else True
+                else:
+                    print("The designated is a file path instread of a directory. File paths cannot be used as directories")
+                    confirmation = str(input("Please confirm if you want to set the parent directory of your designated file path as your assignment directory (y/N) : "))
+                    if confirmation in ["y", "Y"]:
+                        is_confirmed = True
+                        new_folder_dir = str(Path(new_folder_dir).resolve().parent)
+                    else:
+                        is_confirmed = False
+            original_assi_folder_dir = meta_data_json[setting_capsule_name]["assi_folder_dir"]
+            versioning_folder_name = f"{meta_data_json[setting_capsule_name]["capsule_name"]}_versioning"
+            origial_versioning_folder_path = Path(original_assi_folder_dir) / versioning_folder_name
+            meta_data_json[setting_capsule_name]["assi_folder_dir"] = new_folder_dir
+            if origial_versioning_folder_path.exists():
+                shutil.move(origial_versioning_folder_path, Path(new_folder_dir))
+            print(f"Successfully changed to : {new_folder_dir}")
+
+        elif setting_item_selected == "3":
             meta_data_json = self.meta_data_json
             setting_capsule_name = self.ask_capsule_name()
             print("Current Settings:")
@@ -635,7 +661,7 @@ class MyAssignment:
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
 
-        elif setting_item_selected == "5":
+        elif setting_item_selected == "4":
             from updater import update_from_git
             update_from_git(self.current_dir, self.my_path)
             exit()
@@ -696,5 +722,5 @@ TODOS:
 
 TODOS:
 10 add options to app_config to improve usability
-11 fix and update setting items 1 , 2 , 3
+11 fix and update setting items 1 , 2 , 3 *
 """
