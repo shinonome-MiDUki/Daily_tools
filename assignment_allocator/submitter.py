@@ -275,10 +275,11 @@ class MyAssignment:
             print("No default assignment folder is set")
             print("Please set default folder before using")
             return
-
-        used_capsule_name = self.ask_capsule_name()
-        used_capsule_real_name = meta_data_json[used_capsule_name]["capsule_name"]
-        capsule_root_folder_dir = Path(meta_data_json[used_capsule_name]["assi_folder_dir"])
+        
+        if not open_latest:
+            used_capsule_name = self.ask_capsule_name()
+            used_capsule_real_name = meta_data_json[used_capsule_name]["capsule_name"]
+            capsule_root_folder_dir = Path(meta_data_json[used_capsule_name]["assi_folder_dir"])
             
         def move_file(file_str, renamed_name):
             file = Path(file_str)
@@ -489,7 +490,6 @@ class MyAssignment:
 
     def initialization_mode(self, config_conversation=False):
         print("Create new assignment capsule here")
-        new_folder_dir = str(input("Input a directory for your new assignment folder : ")).strip()
         is_confirmed = False
         while not is_confirmed:
             new_folder_dir = str(input("Input a directory for your new assignment folder : ")).strip()
@@ -585,6 +585,7 @@ class MyAssignment:
             if len(meta_data_json) == 2:
                 print("There is only one capsule which is already in default")
                 return
+            print("Choose a capsule to set default")
             setting_capsule_name = self.ask_capsule_name()
             if setting_capsule_name == "default":
                 print("The selected capsule is already in default")
@@ -662,7 +663,11 @@ class MyAssignment:
                 json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
 
         elif setting_item_selected == "4":
-            from updater import update_from_git
+            try:
+                from updater import update_from_git
+            except:
+                print("Unable to obtain the updater script")
+                return
             update_from_git(self.current_dir, self.my_path)
             exit()
 
@@ -674,15 +679,17 @@ mode_explanation = """Input
 1 : continuation
 2 : versioning
 3 : initialization
-4 : settings
-→input : 
-"""
-mode = str(input(mode_explanation))
+4 : settings"""
+print(mode_explanation)
+mode = str(input("→input : "))
 print("")
 ma = MyAssignment()
 
-regex_checker = re.fullmatch(r"\d[a-z|A-Z]", mode)
-if "1" in mode:
+regex_checker = re.fullmatch(r"\d[a-z|A-Z]?", mode)
+if not regex_checker:
+    print("Invalid mode")
+    pass
+elif "1" in mode:
     ma.continuation_mode(
         is_renaming="r" in mode, 
         versioning="v" in mode, 
