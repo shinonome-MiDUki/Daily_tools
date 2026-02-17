@@ -51,14 +51,16 @@ class MyAssignment:
             k = 1
             capsule_list = []
             for capsule_name in self.meta_data_json:
+                if capsule_name == "app_config":
+                    continue
                 print(f"{k} : {capsule_name}")
                 capsule_list.append(capsule_name)
                 k += 1
             used_capsule = str(input("Select a capsule: "))
             while used_capsule not in [f"{j}" for j in range(1,k)]:
                 if used_capsule == "": 
-                    used_capsule = "1"
-                    break
+                    used_capsule_name = "default"
+                    return used_capsule_name
                 print("Invalid")
                 used_capsule = str(input("Select a capsule: "))
             used_capsule_name = capsule_list[int(used_capsule)-1] if used_capsule in [f"{j}" for j in range(1,k)] else "default"
@@ -679,8 +681,8 @@ print("")
 # cd /Users/shiinaayame/Documents/Daily_tools/assignment_allocator ; python3 submitter.py
 """
 TODOS:
-1 in initialization, confirm no files are set to client folder 
-2 avoid user from chooing app config which is not a capsule name 
+1 in initialization, confirm no files are set to client folder * 
+2 avoid user from chooing app config which is not a capsule name  * 
 3 allow users to choose to copy and move * 
 4 allow users to terminate diving * 
 5 strengthen mode input check (now, for eg cat1 will also be treated as 1 and c in mode) * 
