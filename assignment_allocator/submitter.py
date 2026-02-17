@@ -455,15 +455,22 @@ class MyAssignment:
     def initialization_mode(self, config_conversation=False):
         print("Create new assignment capsule here")
         new_folder_dir = str(input("Input a directory for your new assignment folder : ")).strip()
-        print(f"Confirmarion : {new_folder_dir}")
-        confirmation = str(input("Please confirm the directory of your new assignment folder (Y/N) : "))
-        is_confirmed = confirmation == "Y"
+        is_confirmed = False
         while not is_confirmed:
-            new_folder_dir = str(input("Input a directory for your new assignment folder : "))
-            print(f"Confirmarion : {new_folder_dir}")
-            confirmation = str(input("Please confirm the directory of your new assignment folder (Y/N) : "))
-            is_confirmed = confirmation == "Y"
-        
+            new_folder_dir = str(input("Input a directory for your new assignment folder : ")).strip()
+            if Path(new_folder_dir).is_dir():
+                print(f"Confirmarion : {new_folder_dir}")
+                confirmation = str(input("Please confirm the directory of your new assignment folder (Y/n) : "))
+                is_confirmed = False if confirmation in ["n", "N"] else True
+            else:
+                print("The designated is a file path instread of a directory. File paths cannot be used as directories")
+                confirmation = str(input("Please confirm if you want to set the parent directory of your designated file path as your assignment directory (y/N) : "))
+                if confirmation in ["y", "Y"]:
+                    is_confirmed = True
+                    new_folder_dir = str(Path(new_folder_dir).resolve().parent)
+                else:
+                    is_confirmed = False
+            
         capsule_name = str(input("Input your new capsule name : "))
 
         meta_data_raw = {
