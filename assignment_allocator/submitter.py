@@ -693,4 +693,8 @@ TODOS:
 7 Space is accidentialy added the the collection dir name when setting 
 8 allow users to alter names of folders and files without crashing the app 
 9 Allow users to directly operate versioning collections after query 
+
+TODOS:
+10 add options to app_config to improve usability
+11 fix and update setting items 1 , 2 , 3
 """
