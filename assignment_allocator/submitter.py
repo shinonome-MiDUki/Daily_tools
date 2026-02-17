@@ -113,8 +113,9 @@ class MyAssignment:
         def set_version(capsule_name):
             meta_data_json = self.meta_data_json
             target_capsule_name = self.ask_capsule_name() if capsule_name == None else capsule_name
+            target_capsule_real_name = meta_data_json[target_capsule_name]["capsule_name"]
             capsule_root_folder_dir = meta_data_json[target_capsule_name]["assi_folder_dir"]
-            versioning_dir = Path(capsule_root_folder_dir) / f"{target_capsule_name}_versioning"
+            versioning_dir = Path(capsule_root_folder_dir) / f"{target_capsule_real_name}_versioning"
             if not versioning_dir.exists():
                 versioning_dir.mkdir(parents=True, exist_ok=True)
 
@@ -152,7 +153,7 @@ class MyAssignment:
                 versioning_meta_data_json = {}
             versioning_collection_alias = str(input("Name this versioning collection : ")).strip()
             if versioning_collection_alias == "":
-                versioning_collection_alias = target_capsule_name
+                versioning_collection_alias = f"{target_capsule_real_name}_{datetime.datetime.now()}"
             versioning_meta_data_json[versioning_collection_alias] = {
                 "active_path" : str(target_selected_path),
                 1 : {
@@ -168,7 +169,8 @@ class MyAssignment:
         def clear_collection():
             target_capsule_name = self.ask_capsule_name()
             capsule_root_folder_dir = Path(self.meta_data_json[target_capsule_name]["assi_folder_dir"])
-            version_dir = capsule_root_folder_dir / f"{target_capsule_name}_versioning"
+            target_capsule_real_name = self.meta_data_json[target_capsule_name]["capsule_name"]
+            version_dir = capsule_root_folder_dir / f"{target_capsule_real_name}_versioning"
             versioning_meta_data_json_path = version_dir / "versioning_meta_data.json"
             if versioning_meta_data_json_path.exists():
                 with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
@@ -204,7 +206,8 @@ class MyAssignment:
             meta_data_json = self.meta_data_json
             target_capsule_name = self.ask_capsule_name() if capsule_name == None else capsule_name
             capsule_root_folder_dir = meta_data_json[target_capsule_name]["assi_folder_dir"]
-            versioning_dir = Path(capsule_root_folder_dir) / f"{target_capsule_name}_versioning"
+            target_capsule_real_name =  meta_data_json[target_capsule_name]["capsule_name"]
+            versioning_dir = Path(capsule_root_folder_dir) / f"{target_capsule_real_name}_versioning"
             versioning_meta_data_json_path = versioning_dir / "versioning_meta_data.json"
             if versioning_meta_data_json_path.exists():
                 with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
@@ -245,7 +248,7 @@ class MyAssignment:
             return
 
         used_capsule_name = self.ask_capsule_name()
-
+        used_capsule_real_name = meta_data_json[used_capsule_name]["capsule_name"]
         capsule_root_folder_dir = Path(meta_data_json[used_capsule_name]["assi_folder_dir"])
             
         def move_file(file_str, renamed_name):
@@ -333,7 +336,7 @@ class MyAssignment:
             return str(destination)
 
         def version_file(file_str=None, renamed_name=None, is_recovering=False):
-            version_dir = capsule_root_folder_dir / f"{used_capsule_name}_versioning"
+            version_dir = capsule_root_folder_dir / f"{used_capsule_real_name}_versioning"
             versioning_meta_data_json_path = version_dir / "versioning_meta_data.json"
             if versioning_meta_data_json_path.exists():
                 with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
@@ -686,7 +689,7 @@ TODOS:
 3 allow users to choose to copy and move * 
 4 allow users to terminate diving * 
 5 strengthen mode input check (now, for eg cat1 will also be treated as 1 and c in mode) * 
-6 the capsulename_versioning folder is not a normal folder so hide it in menu 
+6 the capsulename_versioning folder is not a normal folder so hide it in menu * 
 7 Space is accidentialy added the the collection dir name when setting 
 8 allow users to alter names of folders and files without crashing the app 
 9 Allow users to directly operate versioning collections after query 
