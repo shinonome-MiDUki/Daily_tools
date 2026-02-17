@@ -153,6 +153,40 @@ class MyAssignment:
             }
             with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
                 json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
+            
+        def clear_collection():
+            target_capsule_name = self.ask_capsule_name()
+            capsule_root_folder_dir = self.meta_data_json[target_capsule_name]["assi_folder_dir"]
+            version_dir = capsule_root_folder_dir / f"{target_capsule_name}_versioning"
+            versioning_meta_data_json_path = version_dir / "versioning_meta_data.json"
+            if versioning_meta_data_json_path.exists():
+                with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
+                    versioning_meta_data_json = json.load(f)
+            else:
+                print("No versioning collection exists")
+                return
+            
+            i = 1
+            versioning_collections = []
+            for versioning_collection in versioning_meta_data_json:
+                print(f"{i} : {versioning_collection}")
+                versioning_collections.append(versioning_collection)
+                i += 1
+            target_selected = str(input("Select a versioning collection : "))
+            while target_selected not in [f"{j}" for j in range(1,i)]:
+                print("Invalid")
+                target_selected = str(input("Select a versioning collection : "))
+            selected_versioning_collection = versioning_collections[int(target_selected)-1]
+            active_path = Path(versioning_meta_data_json[selected_versioning_collection]["active_path"])
+            version_data = versioning_meta_data_json[selected_versioning_collection]
+            for version_name in version_data:
+                if str(version_name).isdigit() and "archived_path" in version_data[version_name]:
+                    version_archive_path = Path(version_data[version_name]["archived_path"])
+                    if version_archive_path.exists() and version_archive_path != active_path:
+                        os.unlink(version_archive_path)
+            del versioning_meta_data_json[selected_versioning_collection]
+            with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
+                json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
 
         def query_version():
             keyword = str(input("Search : ")).strip()
@@ -168,7 +202,7 @@ class MyAssignment:
                     print(versioning_meta_data_json)
                 else:
                     for versioning_collection in versioning_meta_data_json:
-                        if keyword in versioning_collection:
+                        if keyword.lower() in str(versioning_collection).lower():
                             collection_info = {
                                 versioning_collection : versioning_meta_data_json[versioning_collection]
                                 }
@@ -346,7 +380,7 @@ class MyAssignment:
             return str(storing_path)
 
         def opening_file(is_open_previous=False):
-            if not is_open_previous
+            if not is_open_previous:
                 dive_layer = meta_data_json[used_capsule_name]["config"]["dive_layer"]
                 searching_folder_dir = meta_data_json[used_capsule_name]["assi_folder_dir"]
                 searching_layer = 1
