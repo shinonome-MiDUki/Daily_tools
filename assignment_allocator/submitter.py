@@ -35,17 +35,13 @@ class MyAssignment:
         self.my_path = Path(__file__).resolve()
         self.current_dir = Path(__file__).resolve().parent
         self.meta_data_path = self.current_dir / "myassi_meta.json"
-        if not self.meta_data_path.exists():
-            with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                json.dump({}, f)
-        else:
-            try:
-                with open(self.meta_data_path, "r", encoding="utf-8") as f:
-                    self.meta_data_json = json.load(f)
-            except:
-                print("No valid assignment folder is set")
-                print("Please set a valid folder before using")
-                return
+        try:
+            with open(self.meta_data_path, "r", encoding="utf-8") as f:
+                self.meta_data_json = json.load(f)
+        except:
+            print("No valid assignment folder is set")
+            print("Please set a valid folder before using")
+            return
         
     def ask_capsule_name(self):
         if len(self.meta_data_json) == 1:
@@ -186,9 +182,9 @@ class MyAssignment:
         else:
             set_version(capsule_name)
 
-    def continuation_mode(self, is_renaming=False, versioning=False, is_open=False, recover_version=False):
+    def continuation_mode(self, is_renaming=False, versioning=False, is_open=False, recover_version=False, open_previous=False):
         meta_data_json = self.meta_data_json
-        if meta_data_json == {}:
+        if len(meta_data_json) == 1:
             print("No default assignment folder is set")
             print("Please set default folder before using")
             return
@@ -273,6 +269,7 @@ class MyAssignment:
             shutil.move(file, destination)
             print(f"Moved to {destination}")
             print("Successful")
+            return str(destination)
 
         def version_file(file_str=None, renamed_name=None, is_recovering=False):
             version_dir = capsule_root_folder_dir / f"{used_capsule_name}_versioning"
@@ -346,16 +343,25 @@ class MyAssignment:
             with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
                 json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
 
-        def opening_file():
-            dive_layer = meta_data_json[used_capsule_name]["config"]["dive_layer"]
-            searching_folder_dir = meta_data_json[used_capsule_name]["assi_folder_dir"]
-            searching_layer = 1
-            if meta_data_json[used_capsule_name]["config"]["use_weekday"] == True:
-                dive_layer += 1
-            while True:
-                searching_folder_dir = self.diving(searching_folder_dir, is_search_for_file=True)
-                proceed_confirmation = str(input("Proceed? (Y/n)"))
-                if proceed_confirmation in ["n", "N"]: break
+            return str(storing_path)
+
+        def opening_file(is_open_previous=False):
+            if not is_open_previous
+                dive_layer = meta_data_json[used_capsule_name]["config"]["dive_layer"]
+                searching_folder_dir = meta_data_json[used_capsule_name]["assi_folder_dir"]
+                searching_layer = 1
+                if meta_data_json[used_capsule_name]["config"]["use_weekday"] == True:
+                    dive_layer += 1
+                while True:
+                    searching_folder_dir = self.diving(searching_folder_dir, is_search_for_file=True)
+                    proceed_confirmation = str(input("Proceed? (Y/n)"))
+                    if proceed_confirmation in ["n", "N"]: break
+            else:
+                if "latest_opened" in meta_data_json["app_config"]:
+                    searching_folder_dir = Path(meta_data_json["app_config"]["latest_opened"])
+                    if not searching_folder_dir.exists():
+                        print("File not exist")
+                        return
             
             if platform.system() == "Darwin":
                 subprocess.run(["open", "-R", searching_folder_dir])
@@ -367,15 +373,21 @@ class MyAssignment:
         
         if is_open:
             opening_file()
+        elif open_previous:
+            opening_file(is_open_previous=True)
         elif recover_version:
             version_file(is_recovering=True)
         else:
             your_assi_path = str(input("Drag your assignment here : ")).strip()
             renamed_name = str(input("Rename as : ")).strip() if is_renaming else ""
             if not versioning:
-                move_file(your_assi_path, renamed_name)
+                previous_file_path = move_file(your_assi_path, renamed_name)
             else:
-                version_file(file_str=your_assi_path, renamed_name=renamed_name)
+                previous_file_path = version_file(file_str=your_assi_path, renamed_name=renamed_name)
+
+            meta_data_json["app_config"]["latest_opened"] = previous_file_path
+            with open(self.meta_data_path, "w", encoding="utf-8") as f:
+                json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
 
     def initialization_mode(self, config_conversation=False):
         print("Create new assignment capsule here")
@@ -410,9 +422,11 @@ class MyAssignment:
             } #"use_weekday", "include_weekends", "dive_layer"
             meta_data_raw["config"] = config_dic
 
-        if self.meta_data_json == {}:
+        if len(self.meta_data_json) == 1:
+            meta_data_json = self.meta_data_json
+            meta_data_json["default"] = meta_data_raw
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                json.dump({"default" : meta_data_raw}, f, ensure_ascii=False)
+                json.dump(meta_data_json, f, ensure_ascii=False)
             print("New capsule created")
             print(f"capsule name : {capsule_name}")
             print(f"assignment folder directory : {new_folder_dir}")
@@ -560,11 +574,21 @@ mode = str(input("Input 1 for continuation\nInput 2 for versioning\nInput 3 for 
 print("")
 ma = MyAssignment()
 if "1" in mode:
-    ma.continuation_mode(is_renaming="r" in mode, versioning="v" in mode, is_open="o" in mode, recover_version="c" in mode)
+    ma.continuation_mode(
+        is_renaming="r" in mode, 
+        versioning="v" in mode, 
+        is_open="o" in mode, 
+        recover_version="c" in mode, 
+        open_previous="p" in mode
+        )
 elif "2" in mode:
-    ma.set_versioning_mode(is_query="q" in mode)
+    ma.set_versioning_mode(
+        is_query="q" in mode
+        )
 elif "3" in mode:
-    ma.initialization_mode(config_conversation="i" in mode)
+    ma.initialization_mode(
+        config_conversation="i" in mode
+     )
 elif "4" in mode:
     ma.settings_mode()
 else:
