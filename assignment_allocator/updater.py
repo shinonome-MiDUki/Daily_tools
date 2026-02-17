@@ -12,8 +12,8 @@ def update_from_git(current_dir, my_path):
     except:
         print("Github cloning error")
         return
-    updated_script_dir = storing_dir / "assignment_allocator"
-    dot_git_folder_dir = updated_script_dir / ".git"
+    dot_git_folder_dir = storing_dir / ".git"
+    dot_gitignore_folder_dir = storing_dir / ".gitignore"
     try:
         py_major_version = int(sys.version.split(".")[0])
         py_minor_version = int(sys.version.split(".")[1])
@@ -25,7 +25,10 @@ def update_from_git(current_dir, my_path):
             shutil.rmtree(dot_git_folder_dir, onexc=untrack_git_error)
         else:
             shutil.rmtree(dot_git_folder_dir, onerror=untrack_git_error)
+        os.unlink(dot_gitignore_folder_dir)
+        
         files_to_delete = ["myassi_meta.json", "updater.py", "test.py"]
+        updated_script_dir = storing_dir / "assignment_allocator"
         for file_to_delete in files_to_delete:
             default_json_config_path = updated_script_dir / file_to_delete
             if default_json_config_path.exists():
