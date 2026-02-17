@@ -218,7 +218,7 @@ class MyAssignment:
         else:
             set_version(capsule_name)
 
-    def continuation_mode(self, is_renaming=False, versioning=False, is_open=False, recover_version=False, open_previous=False):
+    def continuation_mode(self, is_renaming=False, versioning=False, is_open=False, recover_version=False, open_latest=False):
         meta_data_json = self.meta_data_json
         if len(meta_data_json) == 1:
             print("No default assignment folder is set")
@@ -410,7 +410,7 @@ class MyAssignment:
         
         if is_open:
             opening_file()
-        elif open_previous:
+        elif open_latest:
             opening_file(is_open_previous=True)
         elif recover_version:
             version_file(is_recovering=True)
@@ -616,7 +616,7 @@ if "1" in mode:
         versioning="v" in mode, 
         is_open="o" in mode, 
         recover_version="c" in mode, 
-        open_previous="p" in mode
+        open_latest="l" in mode
         )
 elif "2" in mode:
     ma.set_versioning_mode(
