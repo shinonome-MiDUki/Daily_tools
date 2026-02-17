@@ -156,7 +156,7 @@ class MyAssignment:
             
         def clear_collection():
             target_capsule_name = self.ask_capsule_name()
-            capsule_root_folder_dir = self.meta_data_json[target_capsule_name]["assi_folder_dir"]
+            capsule_root_folder_dir = Path(self.meta_data_json[target_capsule_name]["assi_folder_dir"])
             version_dir = capsule_root_folder_dir / f"{target_capsule_name}_versioning"
             versioning_meta_data_json_path = version_dir / "versioning_meta_data.json"
             if versioning_meta_data_json_path.exists():
@@ -390,6 +390,7 @@ class MyAssignment:
                     dive_layer += 1
                 while True:
                     searching_folder_dir = self.diving(searching_folder_dir, is_search_for_file=True)
+                    if searching_folder_dir.is_file(): break
                     proceed_confirmation = str(input("Proceed? (Y/n)"))
                     if proceed_confirmation in ["n", "N"]: break
             else:

@@ -30,9 +30,9 @@ def update_from_git(current_dir, my_path):
         files_to_delete = ["myassi_meta.json", "updater.py", "test.py"]
         updated_script_dir = storing_dir / "assignment_allocator"
         for file_to_delete in files_to_delete:
-            default_json_config_path = updated_script_dir / file_to_delete
-            if default_json_config_path.exists():
-                os.unlink(updated_script_dir / "myassi_meta.json")
+            unneeded_path = updated_script_dir / file_to_delete
+            if unneeded_path.exists():
+                os.unlink(unneeded_path)
         shutil.move(updated_script_dir / "submitter.py", current_dir / "update_submitter.py")
     except:
         print("Git history clearing error")
@@ -40,6 +40,7 @@ def update_from_git(current_dir, my_path):
     try:
         updated_script_dir.rmdir()
         storing_dir.rmdir()
+        shutil.rmtree(current_dir / "__pycache__")
     except:
         print("Unable to clear empty folder")
     try:
