@@ -635,3 +635,15 @@ else:
 print("")
 
 # cd /Users/shiinaayame/Documents/Daily_tools/assignment_allocator ; python3 submitter.py
+"""
+TODOS:
+in initialization, confirm no files are set to client folder
+avoid user from chooing app config which is not a capsule name
+allow users to choose to copy and move 
+allow users to terminate diving
+strengthen mode input check (now, for eg cat1 will also be treated as 1 and c in mode)
+the capsulename_versioning folder is not a normal folder so hide it in menu 
+Space is accidentialy added the the collection dir name when setting
+allow users to alter names of folders and files without crashing the app
+Allow users to directly operate versioning collections after query
+"""
