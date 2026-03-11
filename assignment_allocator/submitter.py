@@ -677,19 +677,19 @@ class MyAssignment:
 
     def help(self):
         info = ("""
-                1 : contining
-                "1r : renaming
-                "1v : versioning
-                "1o : opening
-                "1c : recovering
-                "1l : opening latest
-                "1p : copy and move
-                "2 : creating new versioning collection
-                "2q : query versioning info
-                "2c : clear versioning data
-                "3 : creating new capsule
-                "3i : inisialisation with conversation
-                "4 : updating from GitHub
+                1 : continuing
+                1r : renaming
+                1v : versioning
+                1o : opening
+                1c : recovering
+                1l : opening latest
+                1p : copy and move
+                2 : creating new versioning collection
+                2q : query versioning info
+                2c : clear versioning data
+                3 : creating new capsule
+                3i : inisSialisation with conversation
+                4 : updating from GitHub
                 """)
         print(info)
 
