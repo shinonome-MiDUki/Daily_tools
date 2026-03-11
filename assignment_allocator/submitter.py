@@ -675,44 +675,70 @@ class MyAssignment:
             print("Invalid")
             pass
 
-mode_explanation = """Input 
-1 : continuation
-2 : versioning
-3 : initialization
-4 : settings"""
-print(mode_explanation)
-mode = str(input("→input : "))
-print("")
-ma = MyAssignment()
+    def help(self):
+        info = ("""
+                1 : contining
+                "1r : renaming
+                "1v : versioning
+                "1o : opening
+                "1c : recovering
+                "1l : opening latest
+                "1p : copy and move
+                "2 : creating new versioning collection
+                "2q : query versioning info
+                "2c : clear versioning data
+                "3 : creating new capsule
+                "3i : inisialisation with conversation
+                "4 : updating from GitHub
+                """)
+        print(info)
 
-regex_checker = re.fullmatch(r"\d[a-z|A-Z]?", mode)
-if not regex_checker:
-    print("Invalid mode")
-    pass
-elif "1" in mode:
-    ma.continuation_mode(
-        is_renaming="r" in mode, 
-        versioning="v" in mode, 
-        is_open="o" in mode, 
-        recover_version="c" in mode, 
-        open_latest="l" in mode,
-        copy_and_move="p" in mode
+def main():
+    mode_explanation = """Input 
+    1 : continuation
+    2 : versioning
+    3 : initialization
+    4 : settings
+    5 : help"""
+    print(mode_explanation)
+    mode = str(input("→input : "))
+    print("")
+    ma = MyAssignment()
+
+    regex_checker = re.fullmatch(r"\d[a-z|A-Z]?", mode)
+    if not regex_checker:
+        print("Invalid mode")
+        pass
+    elif "1" in mode:
+        ma.continuation_mode(
+            is_renaming="r" in mode, 
+            versioning="v" in mode, 
+            is_open="o" in mode, 
+            recover_version="c" in mode, 
+            open_latest="l" in mode,
+            copy_and_move="p" in mode
+            )
+    elif "2" in mode:
+        ma.set_versioning_mode(
+            is_query="q" in mode,
+            is_clear="c" in mode
+            )
+    elif "3" in mode:
+        ma.initialization_mode(
+            config_conversation="i" in mode
         )
-elif "2" in mode:
-    ma.set_versioning_mode(
-        is_query="q" in mode,
-        is_clear="c" in mode
-        )
-elif "3" in mode:
-    ma.initialization_mode(
-        config_conversation="i" in mode
-     )
-elif "4" in mode:
-    ma.settings_mode()
-else:
-    print("Invalid mode")
-    pass
-print("")
+    elif "4" in mode:
+        ma.settings_mode()
+    elif "5" in mode:
+        ma.help()
+        main()
+    else:
+        print("Invalid mode")
+        pass
+    print("")
+
+if __name__ == "__main__":
+    main()
 
 # cd /Users/shiinaayame/Documents/Daily_tools/assignment_allocator ; python3 submitter.py
 """
