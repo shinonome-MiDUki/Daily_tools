@@ -426,6 +426,7 @@ class MyAssignment:
             versioned_file_data = versioning_meta_data_json[selected_versioning_collection][str(version_num)] 
             versioned_file_data["archived_path"] = str(archived_path)
             versioned_file_data["versioned_datetime"] = str(datetime.datetime.now())
+            versioning_meta_data_json[selected_versioning_collection][str(version_num)] = versioned_file_data
             versioning_meta_data_json[selected_versioning_collection][str(version_num+1)] = {
                 "original_path" : str(storing_path),
                 "added_datetime" : str(datetime.datetime.now()),
@@ -689,7 +690,7 @@ class MyAssignment:
                 2c : clear versioning data
                 3 : creating new capsule
                 3i : inisSialisation with conversation
-                4 : updating from GitHub
+                4 : settings
                 """)
         print(info)
 
