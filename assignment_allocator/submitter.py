@@ -752,7 +752,8 @@ class MyAssignment:
             "1" : "change default",
             "2" : "change assignment folder", 
             "3" : "edit configurations",
-            "4" : "update"
+            "4" : "edit app configurations",
+            "5" : "update"
         }
         meta_data_json = self.meta_data_json
         for setting_item in SETTING_ITEMS:
@@ -849,6 +850,33 @@ class MyAssignment:
                 json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
 
         elif setting_item_selected == "4":
+            if "app_config" in meta_data_json:
+                print("Current app configurations : ")
+                i = 1
+                for app_config_item in meta_data_json["app_config"]:
+                    if isinstance(meta_data_json["app_config"][app_config_item], bool):
+                        print(f"{i} : {app_config_item} - {meta_data_json['app_config'][app_config_item]}")
+                    i += 1
+                is_continue_to_set = True
+                while is_continue_to_set:
+                    item_to_set = str(input(f"Input the item you want to set (1-{i-1}): "))
+                    while item_to_set not in [f"{j}" for j in range(1,i)]:
+                        print("Invalid")
+                        item_to_set = str(input(f"Input the item you want to set (1-{i-1}): "))
+                    meta_data_json["app_config"][item_to_set] = not meta_data_json["app_config"][item_to_set]
+                    is_continue_to_set = False if str(input(f"Edit other app configurations? (y/N) ")) not in ["y", "Y"] else True
+                    
+                with open(self.meta_data_path, "w", encoding="utf-8") as f:
+                    json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+                print("Current app configurations : ")
+                for app_config_item in meta_data_json["app_config"]:
+                    if isinstance(meta_data_json["app_config"][app_config_item], bool):
+                        print(f"{app_config_item} - {meta_data_json['app_config'][app_config_item]}")
+            else:
+                print("No app configuration found")
+                meta_data_json["app_config"] = {}
+
+        elif setting_item_selected == "5":
             try:
                 from updater import update_from_git
             except:
@@ -883,7 +911,7 @@ class MyAssignment:
 
 def main():
     ma = MyAssignment()
-    
+
     mode_explanation = """Input 
     1 : continuation
     2 : versioning
