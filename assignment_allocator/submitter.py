@@ -591,7 +591,7 @@ class MyAssignment:
                 course_info = course_registered.split(",")
                 course_name, course_credit, course_catagory = None, None, None
                 try:
-                    course_name = course_info[0].strip(" ")
+                    course_name = None if course_info[0].strip(" ") == "" else course_info[0].strip(" ")
                     course_credit = course_info[1].strip(" ")
                     course_catagory = course_info[2].strip(" ")
                 except:
