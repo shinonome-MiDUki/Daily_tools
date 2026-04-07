@@ -316,7 +316,7 @@ class MyAssignment:
         course_info_split = course_info.split(",")
         course_name, course_credit, course_catagory = None, None, None
         try:
-            course_name = course_info_split[0].strip(" ")
+            course_name = None if course_info_split[0].strip(" ") == "" else course_info_split[0].strip(" ")
             course_credit = course_info_split[1].strip(" ")
             course_catagory = course_info_split[2].strip(" ")
         except:
@@ -329,6 +329,18 @@ class MyAssignment:
             if confirmation not in ["y", "Y"]:
                 print("Course registration cancelled")
                 return
+            os.rename(
+                Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"{period_to_register}限：{original_course_info['course_name']}",
+                Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"Original_{period_to_register}限：{original_course_info['course_name']}"
+            )
+            os.makedirs(Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"{period_to_register}限：{course_name}", exist_ok=True)
+        elif course_name == None:
+            os.rename(
+                Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"{period_to_register}限：{original_course_info['course_name']}",
+                Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"Original_{period_to_register}限：{original_course_info['course_name']}"
+            )
+        else:
+            os.makedirs(Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"{period_to_register}限：{course_name}", exist_ok=True)
         meta_data_json[registering_capsule_name]["registered_courses"][day_to_register][period_to_register] = {
             "course_name": course_name,
             "course_credit": course_credit,
@@ -336,6 +348,7 @@ class MyAssignment:
         }
         with open(self.meta_data_path, "w", encoding="utf-8") as f:
             json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+        print("Successfully registered course")
 
 
     def continuation_mode(
