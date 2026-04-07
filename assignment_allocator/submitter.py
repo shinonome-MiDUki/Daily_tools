@@ -1,163 +1,188 @@
-from pathlib import Path
-import json
-import shutil
-import os
-import re
-import sys
-import datetime
-import subprocess
-import platform
+"""
+MyAssignment — assignment file organiser
+"""
 
-from prompt_toolkit import prompt
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.application import Application
-from prompt_toolkit.layout import Layout
-from prompt_toolkit.layout.containers import Window
-from prompt_toolkit.layout.controls import FormattedTextControl
+# ── 標準ライブラリ ────────────────────────────────────────
+import datetime
+import json
+import os
+import platform
+import re
+import subprocess
+import shutil
+from pathlib import Path
+import curses
+
+
+# ── 定数 ──────────────────────────────────────────────────
+
+DAY_OF_WEEK_REF = {
+    "1": "月", "2": "火", "3": "水", "4": "木",
+    "5": "金", "6": "土", "7": "日",
+}
+DAY_OF_WEEK_REF_ENG = {
+    "1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu",
+    "5": "Fri", "6": "Sat", "7": "Sun",
+}
+CONFIG: dict = {
+    "use_weekday": True,
+    "include_weekends": False,
+    "dive_layer": 1,
+}
+CONFIG_CONVENTION: dict[str, str] = {
+    "use_weekday": "Use the day-of-a-week based allocation system",
+    "include_weekends": "Include weekends in your file system",
+    "dive_layer": "The number of dive layers",
+}
+
+_HELP_TEXT = """
+    1  : continuing
+    1n : renaming
+    1v : versioning
+    1o : opening
+    1c : recovering
+    1l : opening latest
+    1p : copy and move
+    1r : registering courses
+    2  : creating new versioning collection
+    2q : query versioning info
+    2c : clear versioning data
+    3  : creating new capsule
+    3i : initialization with conversation
+    3r : initialization with registration
+    4  : settings
+"""
+
+_MODE_OPTIONS = [
+    "1  : continuation",
+    "1n : continuation + rename",
+    "1v : continuation + versioning",
+    "1o : open file",
+    "1c : recover version",
+    "1l : open latest",
+    "1p : copy and move",
+    "1r : register course",
+    "2  : new versioning collection",
+    "2q : query versioning",
+    "2c : clear versioning",
+    "3  : new capsule",
+    "3i : init with conversation",
+    "3r : init with registration",
+    "4  : settings",
+]
+
 
 # ── UI ヘルパー ────────────────────────────────────────────
 
-def help(self):
-    info = ("""
-            1 : continuing
-            1n : renaming
-            1v : versioning
-            1o : opening
-            1c : recovering
-            1l : opening latest
-            1p : copy and move
-            1r : registering courses
-            2 : creating new versioning collection
-            2q : query versioning info
-            2c : clear versioning data
-            3 : creating new capsule
-            3i : initialization with conversation
-            3r : initialization with registrastion
-            4 : settings
-            """)
-    print(info)
-
-
 def ui_select(question: str, options: list[str], extra_options: list[str] | None = None) -> str | None:
     """
-    ターミナルインラインで矢印キー選択 + 直接文字入力の両対応。
+    curses でターミナルインライン選択 + 直接文字入力の両対応。
     - 矢印キーでカーソル移動 → Enter で確定
-    - 文字を入力すると typed_input に蓄積 → Enter で入力文字列をそのまま返す
+    - 文字を入力すると typed に蓄積 → Enter で入力文字列をそのまま返す
     - Backspace で1文字削除
     - Ctrl-C でキャンセル（None を返す）
     """
     all_options = options + (extra_options or [])
     state = {"idx": 0, "cancelled": False, "typed": ""}
 
-    def get_tokens():
-        tokens = []
-        tokens.append(("bold", question + "\n"))
-        if state["typed"]:
-            tokens.append(("ansiyellow", f"  input: {state['typed']}\n"))
-        for i, opt in enumerate(all_options):
-            if i == state["idx"] and not state["typed"]:
-                tokens.append(("ansicyan", f"  ❯ {opt}\n"))
-            else:
-                tokens.append(("", f"    {opt}\n"))
-        return tokens
+    def _draw(stdscr):
+        curses.curs_set(0)
+        curses.start_color()
+        curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)   # 選択中
+        curses.init_pair(2, curses.COLOR_YELLOW, curses.COLOR_BLACK)  # 入力中
 
-    kb = KeyBindings()
+        while True:
+            stdscr.erase()
+            row = 0
+            for line in question.splitlines():
+                stdscr.addstr(row, 0, line, curses.A_BOLD)
+                row += 1
 
-    @kb.add("up")
-    def _up(event):
-        state["typed"] = ""
-        state["idx"] = (state["idx"] - 1) % len(all_options)
+            if state["typed"]:
+                stdscr.addstr(row, 0, f"  input: {state['typed']}", curses.color_pair(2))
+                row += 1
 
-    @kb.add("down")
-    def _down(event):
-        state["typed"] = ""
-        state["idx"] = (state["idx"] + 1) % len(all_options)
+            for i, opt in enumerate(all_options):
+                if i == state["idx"] and not state["typed"]:
+                    stdscr.addstr(row, 0, f"  > {opt}", curses.color_pair(1))
+                else:
+                    stdscr.addstr(row, 0, f"    {opt}")
+                row += 1
 
-    @kb.add("backspace")
-    def _backspace(event):
-        state["typed"] = state["typed"][:-1]
+            stdscr.refresh()
+            key = stdscr.get_wch()
 
-    @kb.add("enter")
-    def _enter(event):
-        event.app.exit()
+            if key == curses.KEY_UP:
+                state["typed"] = ""
+                state["idx"] = (state["idx"] - 1) % len(all_options)
+            elif key == curses.KEY_DOWN:
+                state["typed"] = ""
+                state["idx"] = (state["idx"] + 1) % len(all_options)
+            elif key in (curses.KEY_BACKSPACE, "\x7f", "\b"):
+                state["typed"] = state["typed"][:-1]
+            elif key in ("\n", "\r", curses.KEY_ENTER):
+                break
+            elif key == "\x03":  # Ctrl-C
+                state["cancelled"] = True
+                break
+            elif isinstance(key, str) and len(key) == 1 and key.isprintable():
+                state["typed"] += key
 
-    @kb.add("c-c")
-    def _cancel(event):
-        state["cancelled"] = True
-        event.app.exit()
-
-    # 印字可能文字はすべて typed に蓄積
-    @kb.add("<any>")
-    def _any(event):
-        ch = event.key_sequence[0].key
-        if len(ch) == 1 and ch.isprintable():
-            state["typed"] += ch
-
-    app = Application(
-        layout=Layout(Window(content=FormattedTextControl(get_tokens, focusable=True))),
-        key_bindings=kb,
-        full_screen=False,
-        mouse_support=False,
-    )
-    app.run()
+    curses.wrapper(_draw)
 
     if state["cancelled"]:
         return None
     if state["typed"]:
-        print(f"  ❯ {state['typed']}")
+        print(f"  > {state['typed']}")
         return state["typed"]
     chosen = all_options[state["idx"]]
-    print(f"  ❯ {chosen}")
+    print(f"  > {chosen}")
     return chosen
 
 
 def ui_input(question: str, default: str = "") -> str | None:
-    """
-    prompt_toolkit の prompt() でテキスト入力。
-    Ctrl-C で None を返す。
-    """
-    try:
-        result = prompt(f"{question} ", default=default)
-        return result
-    except KeyboardInterrupt:
+    """curses でテキスト入力。Ctrl-C で None を返す。"""
+    state = {"text": list(default), "cancelled": False}
+
+    def _draw(stdscr):
+        curses.curs_set(1)
+        while True:
+            stdscr.erase()
+            text_str = "".join(state["text"])
+            stdscr.addstr(0, 0, f"{question} {text_str}")
+            stdscr.move(0, len(question) + 1 + len(text_str))
+            stdscr.refresh()
+            key = stdscr.get_wch()
+
+            if key in ("\n", "\r", curses.KEY_ENTER):
+                break
+            elif key == "\x03":  # Ctrl-C
+                state["cancelled"] = True
+                break
+            elif key in (curses.KEY_BACKSPACE, "\x7f", "\b"):
+                if state["text"]:
+                    state["text"].pop()
+            elif isinstance(key, str) and len(key) == 1 and key.isprintable():
+                state["text"].append(key)
+
+    curses.wrapper(_draw)
+
+    if state["cancelled"]:
         return None
+    result = "".join(state["text"])
+    print(f"{question} {result}")
+    return result
 
 
 def ui_confirm(question: str) -> bool:
-    """
-    y/N をインラインで確認。デフォルトは No。
-    """
-    try:
-        ans = prompt(f"{question} (y/N): ")
-        return ans.strip().lower() == "y"
-    except KeyboardInterrupt:
+    """y/N をインラインで確認。デフォルトは No。"""
+    ans = ui_input(f"{question} (y/N):")
+    if ans is None:
         return False
+    return ans.strip().lower() == "y"
 
 
-# ── 定数 ──────────────────────────────────────────────────
-
-print("Welcome to MyAssignment")
-print(" ")
-
-DAY_OF_WEEK_REF = {
-    "1": "月", "2": "火", "3": "水", "4": "木",
-    "5": "金", "6": "土", "7": "日"
-}
-DAY_OF_WEEK_REF_ENG = {
-    "1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu",
-    "5": "Fri", "6": "Sat", "7": "Sun"
-}
-CONFIG = {
-    "use_weekday": True,
-    "include_weekends": False,
-    "dive_layer": 1
-}
-CONFIG_CONVENTION = {
-    "use_weekday": "Use the day-of-a-week based allocation system",
-    "include_weekends": "Include weekends in your file system",
-    "dive_layer": "The number of dive layers"
-}
-
+# ── メインクラス ───────────────────────────────────────────
 
 class MyAssignment:
     def __init__(self):
@@ -167,15 +192,42 @@ class MyAssignment:
         try:
             with open(self.meta_data_path, "r", encoding="utf-8") as f:
                 self.meta_data_json = json.load(f)
-        except:
+        except Exception:
             print("No valid assignment folder is set")
             print("Please set a valid folder before using")
             return
-        if "show_course_today" in self.meta_data_json["app_config"]:
-            if self.meta_data_json["app_config"]["show_course_today"] == True:
-                self.show_course_today()
+        app_cfg = self.meta_data_json.get("app_config", {})
+        if app_cfg.get("show_course_today") is True:
+            self.show_course_today()
 
-    def ask_capsule_name(self):
+    # ── 内部ユーティリティ ─────────────────────────────────
+
+    def _save_meta(self) -> None:
+        """メタデータを JSON ファイルへ書き込む。"""
+        with open(self.meta_data_path, "w", encoding="utf-8") as f:
+            json.dump(self.meta_data_json, f, ensure_ascii=False, indent=3)
+
+    def _versioning_dir(self, capsule_name: str) -> Path:
+        capsule_real_name = self.meta_data_json[capsule_name]["capsule_name"]
+        root = Path(self.meta_data_json[capsule_name]["assi_folder_dir"])
+        return root / f"{capsule_real_name}_versioning"
+
+    def _load_versioning_meta(self, capsule_name: str) -> dict | None:
+        """バージョニングメタデータを読み込む。存在しなければ None を返す。"""
+        path = self._versioning_dir(capsule_name) / "versioning_meta_data.json"
+        if not path.exists():
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def _save_versioning_meta(self, capsule_name: str, data: dict) -> None:
+        path = self._versioning_dir(capsule_name) / "versioning_meta_data.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=3)
+
+    # ── カプセル選択 ───────────────────────────────────────
+
+    def ask_capsule_name(self) -> str | None:
         if len(self.meta_data_json) == 1:
             return "default"
         capsule_list = [k for k in self.meta_data_json if k != "app_config"]
@@ -184,7 +236,9 @@ class MyAssignment:
         chosen = ui_select("Select a capsule:", capsule_list)
         return chosen if chosen else "default"
 
-    def diving(self, searching_folder_dir_input, is_search_for_file=False):
+    # ── フォルダ掘り下げ ───────────────────────────────────
+
+    def diving(self, searching_folder_dir_input, is_search_for_file: bool = False) -> Path:
         searching_folder_dir = Path(searching_folder_dir_input)
         if not is_search_for_file:
             target_names = [f.name for f in searching_folder_dir.iterdir() if f.is_dir()]
@@ -195,7 +249,7 @@ class MyAssignment:
         chosen = ui_select(
             f"Current: {searching_folder_dir}\nSelect a folder:",
             target_names,
-            extra_options=extra
+            extra_options=extra,
         )
 
         if chosen is None or chosen == extra[1]:
@@ -206,14 +260,14 @@ class MyAssignment:
             if not target_name_to_add:
                 return searching_folder_dir
             if "_" in target_name_to_add:
-                target_selected_break = target_name_to_add.split("_")
-                parent_name = target_selected_break[0]
-                child_name = target_selected_break[-1]
+                parts = target_name_to_add.split("_")
+                parent_name, child_name = parts[0], parts[-1]
                 matches = [n for n in target_names if n == parent_name]
-                if matches:
-                    new_dir = searching_folder_dir / matches[0] / child_name
-                else:
-                    new_dir = searching_folder_dir / target_name_to_add
+                new_dir = (
+                    searching_folder_dir / matches[0] / child_name
+                    if matches
+                    else searching_folder_dir / target_name_to_add
+                )
             else:
                 new_dir = searching_folder_dir / target_name_to_add
             new_dir.mkdir(parents=True, exist_ok=True)
@@ -221,266 +275,253 @@ class MyAssignment:
 
         return searching_folder_dir / chosen
 
-    def show_course_today(self):
-        today_day_of_week = str(datetime.datetime.today().isoweekday())
-        defult_capsule_info = self.meta_data_json["default"]
-        if "registered_courses" in defult_capsule_info and defult_capsule_info["registered_courses"] != None:
-            registered_courses = defult_capsule_info["registered_courses"]
-            if today_day_of_week in registered_courses:
-                today_courses = registered_courses[today_day_of_week]
-                print("Today's courses : ")
-                for lesson in today_courses:
-                    course_info = today_courses[lesson]
-                    if course_info["course_name"] != None:
-                        print(f"Lesson {lesson} : {course_info['course_name']}")
-            else:
-                print("No course registered for today")
-        print(" ")
+    # ── 今日のコース表示 ───────────────────────────────────
 
-    def set_versioning_mode(self, capsule_name=None, is_query=False, is_clear=False):
-
-        def set_version(capsule_name):
-            meta_data_json = self.meta_data_json
-            target_capsule_name = self.ask_capsule_name() if capsule_name is None else capsule_name
-            if not target_capsule_name:
-                return
-            target_capsule_real_name = meta_data_json[target_capsule_name]["capsule_name"]
-            capsule_root_folder_dir = meta_data_json[target_capsule_name]["assi_folder_dir"]
-            versioning_dir = Path(capsule_root_folder_dir) / f"{target_capsule_real_name}_versioning"
-            if not versioning_dir.exists():
-                versioning_dir.mkdir(parents=True, exist_ok=True)
-
-            dive_layer = meta_data_json[target_capsule_name]["config"]["dive_layer"]
-            searching_layer = 1
-            if meta_data_json[target_capsule_name]["config"]["use_weekday"] == True:
-                dive_layer += 1
-            searching_folder_dir = capsule_root_folder_dir
-            while searching_layer <= dive_layer:
-                before_searching_folder_dir = searching_folder_dir
-                searching_folder_dir = self.diving(searching_folder_dir)
-                if before_searching_folder_dir == searching_folder_dir:
-                    break
-                searching_layer += 1
-
-            target_file_names = [f.name for f in Path(searching_folder_dir).iterdir()]
-            if not target_file_names:
-                print("No files found in the selected folder.")
-                return
-            target_selected_name = ui_select("Select a file:", target_file_names)
-            if not target_selected_name:
-                return
-            target_selected_path = Path(searching_folder_dir) / target_selected_name
-
-            comment = ui_input("Input comments (leave blank for none):")
-            comment = None if (comment is None or comment.strip() == "") else comment.strip()
-
-            versioning_meta_data_json_path = versioning_dir / "versioning_meta_data.json"
-            if versioning_meta_data_json_path.exists():
-                with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
-                    versioning_meta_data_json = json.load(f)
-            else:
-                versioning_meta_data_json = {}
-
-            default_alias = f"{target_capsule_real_name}_{datetime.datetime.now()}"
-            versioning_collection_alias = ui_input("Name this versioning collection:", default=default_alias)
-            if not versioning_collection_alias or versioning_collection_alias.strip() == "":
-                versioning_collection_alias = default_alias
-            else:
-                versioning_collection_alias = versioning_collection_alias.strip()
-
-            versioning_meta_data_json[versioning_collection_alias] = {
-                "active_path": str(target_selected_path),
-                1: {
-                    "original_path": str(target_selected_path),
-                    "added_datetime": str(datetime.datetime.now()),
-                    "versioned_datetime": str(datetime.datetime.now()),
-                    "comments": comment
-                }
-            }
-            with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
-                json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
-            print(f"Successfully set up versioning collection : {versioning_collection_alias}")
-
-        def clear_collection():
-            target_capsule_name = self.ask_capsule_name()
-            if not target_capsule_name:
-                return
-            capsule_root_folder_dir = Path(self.meta_data_json[target_capsule_name]["assi_folder_dir"])
-            target_capsule_real_name = self.meta_data_json[target_capsule_name]["capsule_name"]
-            version_dir = capsule_root_folder_dir / f"{target_capsule_real_name}_versioning"
-            versioning_meta_data_json_path = version_dir / "versioning_meta_data.json"
-            if versioning_meta_data_json_path.exists():
-                with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
-                    versioning_meta_data_json = json.load(f)
-            else:
-                print("No versioning collection exists")
-                return
-
-            versioning_collections = list(versioning_meta_data_json.keys())
-            selected = ui_select("Select a versioning collection:", versioning_collections)
-            if not selected:
-                return
-            selected_versioning_collection = selected
-
-            confirmed = ui_confirm(f"Clearing versioning collection {selected_versioning_collection}. Confirm?")
-            if not confirmed:
-                print("Clearing action cancelled")
-                return
-
-            active_path = Path(versioning_meta_data_json[selected_versioning_collection]["active_path"])
-            version_data = versioning_meta_data_json[selected_versioning_collection]
-            for version_name in version_data:
-                if str(version_name).isdigit() and "archived_path" in version_data[version_name]:
-                    version_archive_path = Path(version_data[version_name]["archived_path"])
-                    if version_archive_path.exists() and version_archive_path != active_path:
-                        os.unlink(version_archive_path)
-            del versioning_meta_data_json[selected_versioning_collection]
-            with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
-                json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
-            print(f"Successfully cleared versioning collection : {selected_versioning_collection}")
-
-        def query_version():
-            searching_words_raw = ui_input("Search (keyword_option1_option2 ...):")
-            if searching_words_raw is None:
-                return
-            searching_words = searching_words_raw.strip().split("_")
-            keyword = searching_words[0]
-            search_options = searching_words[1:] if len(searching_words) > 1 else []
-
-            meta_data_json = self.meta_data_json
-            target_capsule_name = self.ask_capsule_name() if capsule_name is None else capsule_name
-            if not target_capsule_name:
-                return
-            capsule_root_folder_dir = meta_data_json[target_capsule_name]["assi_folder_dir"]
-            target_capsule_real_name = meta_data_json[target_capsule_name]["capsule_name"]
-            versioning_dir = Path(capsule_root_folder_dir) / f"{target_capsule_real_name}_versioning"
-            versioning_meta_data_json_path = versioning_dir / "versioning_meta_data.json"
-
-            if versioning_meta_data_json_path.exists():
-                with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
-                    versioning_meta_data_json = json.load(f)
-                if versioning_meta_data_json == {}:
-                    print("No versioning data found")
-                    return
-
-                is_have_something_matched_kw = False
-                for versioning_collection in versioning_meta_data_json:
-                    if keyword != "" and keyword.lower() not in str(versioning_collection).lower():
-                        continue
-                    is_have_something_matched_kw = True
-                    print(f"{versioning_collection} : ")
-                    collection_data = versioning_meta_data_json[versioning_collection]
-                    for version in versioning_meta_data_json[versioning_collection]:
-                        if version == "active_path":
-                            print(f"Active path : {collection_data['active_path']}")
-                        else:
-                            print(f"Version {version} : ")
-                            version_data = collection_data[version]
-                            for data_item in version_data:
-                                if search_options:
-                                    for search_option in search_options:
-                                        if search_option.lower() in str(data_item).lower():
-                                            print(f"   {data_item} : {version_data[data_item]}")
-                                            break
-                                else:
-                                    print(f"   {data_item} : {version_data[data_item]}")
-                    print("-----")
-                if not is_have_something_matched_kw:
-                    print("No matching versioning collection")
-            else:
-                print("No versioning data found")
-
-        if is_query:
-            query_version()
-        elif is_clear:
-            clear_collection()
+    def show_course_today(self) -> None:
+        today = str(datetime.datetime.today().isoweekday())
+        default_info = self.meta_data_json.get("default", {})
+        registered = default_info.get("registered_courses")
+        if registered and today in registered:
+            print("Today's courses : ")
+            for lesson, course_info in registered[today].items():
+                if course_info["course_name"] is not None:
+                    print(f"Lesson {lesson} : {course_info['course_name']}")
         else:
-            set_version(capsule_name)
+            print("No course registered for today")
+        print()
 
-    def add_register_course(self):
-        registering_capsule_name = self.ask_capsule_name()
-        if not registering_capsule_name:
+    # ── ヘルプ ─────────────────────────────────────────────
+
+    def help(self) -> None:
+        print(_HELP_TEXT)
+
+    # ── バージョニング操作 ─────────────────────────────────
+
+    def set_versioning_mode(
+        self,
+        capsule_name: str | None = None,
+        is_query: bool = False,
+        is_clear: bool = False,
+    ) -> None:
+        if is_query:
+            self._query_version(capsule_name)
+        elif is_clear:
+            self._clear_versioning_collection()
+        else:
+            self._create_versioning_collection(capsule_name)
+
+    def _create_versioning_collection(self, capsule_name: str | None) -> None:
+        meta = self.meta_data_json
+        target = self.ask_capsule_name() if capsule_name is None else capsule_name
+        if not target:
             return
-        meta_data_json = self.meta_data_json
-        if "registered_courses" not in meta_data_json[registering_capsule_name] or meta_data_json[registering_capsule_name]["registered_courses"] is None:
+        capsule_real_name = meta[target]["capsule_name"]
+        capsule_root = Path(meta[target]["assi_folder_dir"])
+        versioning_dir = self._versioning_dir(target)
+        versioning_dir.mkdir(parents=True, exist_ok=True)
+
+        dive_layer = meta[target]["config"]["dive_layer"]
+        if meta[target]["config"]["use_weekday"]:
+            dive_layer += 1
+
+        searching_folder_dir: Path = capsule_root
+        for _ in range(dive_layer):
+            prev = searching_folder_dir
+            searching_folder_dir = self.diving(searching_folder_dir)
+            if prev == searching_folder_dir:
+                break
+
+        target_file_names = [f.name for f in searching_folder_dir.iterdir()]
+        if not target_file_names:
+            print("No files found in the selected folder.")
+            return
+        selected_name = ui_select("Select a file:", target_file_names)
+        if not selected_name:
+            return
+        selected_path = searching_folder_dir / selected_name
+
+        comment_raw = ui_input("Input comments (leave blank for none):")
+        comment = comment_raw.strip() if comment_raw and comment_raw.strip() else None
+
+        versioning_meta_path = versioning_dir / "versioning_meta_data.json"
+        versioning_meta: dict = {}
+        if versioning_meta_path.exists():
+            with open(versioning_meta_path, "r", encoding="utf-8") as f:
+                versioning_meta = json.load(f)
+
+        default_alias = f"{capsule_real_name}_{datetime.datetime.now()}"
+        alias_raw = ui_input("Name this versioning collection:", default=default_alias)
+        alias = alias_raw.strip() if alias_raw and alias_raw.strip() else default_alias
+
+        versioning_meta[alias] = {
+            "active_path": str(selected_path),
+            1: {
+                "original_path": str(selected_path),
+                "added_datetime": str(datetime.datetime.now()),
+                "versioned_datetime": str(datetime.datetime.now()),
+                "comments": comment,
+            },
+        }
+        with open(versioning_meta_path, "w", encoding="utf-8") as f:
+            json.dump(versioning_meta, f, ensure_ascii=False, indent=3)
+        print(f"Successfully set up versioning collection : {alias}")
+
+    def _clear_versioning_collection(self) -> None:
+        target = self.ask_capsule_name()
+        if not target:
+            return
+        versioning_meta = self._load_versioning_meta(target)
+        if versioning_meta is None:
+            print("No versioning collection exists")
+            return
+
+        selected = ui_select("Select a versioning collection:", list(versioning_meta.keys()))
+        if not selected:
+            return
+
+        if not ui_confirm(f"Clearing versioning collection {selected}. Confirm?"):
+            print("Clearing action cancelled")
+            return
+
+        active_path = Path(versioning_meta[selected]["active_path"])
+        for version_name, version_data in versioning_meta[selected].items():
+            if str(version_name).isdigit() and "archived_path" in version_data:
+                archived = Path(version_data["archived_path"])
+                if archived.exists() and archived != active_path:
+                    os.unlink(archived)
+        del versioning_meta[selected]
+        self._save_versioning_meta(target, versioning_meta)
+        print(f"Successfully cleared versioning collection : {selected}")
+
+    def _query_version(self, capsule_name: str | None) -> None:
+        searching_words_raw = ui_input("Search (keyword_option1_option2 ...):")
+        if searching_words_raw is None:
+            return
+        parts = searching_words_raw.strip().split("_")
+        keyword = parts[0]
+        search_options = parts[1:]
+
+        target = self.ask_capsule_name() if capsule_name is None else capsule_name
+        if not target:
+            return
+        versioning_meta = self._load_versioning_meta(target)
+        if not versioning_meta:
+            print("No versioning data found")
+            return
+
+        matched = False
+        for collection, collection_data in versioning_meta.items():
+            if keyword and keyword.lower() not in str(collection).lower():
+                continue
+            matched = True
+            print(f"{collection} : ")
+            for version, version_data in collection_data.items():
+                if version == "active_path":
+                    print(f"Active path : {collection_data['active_path']}")
+                else:
+                    print(f"Version {version} : ")
+                    for data_item, data_val in version_data.items():
+                        if search_options:
+                            if any(opt.lower() in str(data_item).lower() for opt in search_options):
+                                print(f"   {data_item} : {data_val}")
+                        else:
+                            print(f"   {data_item} : {data_val}")
+            print("-----")
+        if not matched:
+            print("No matching versioning collection")
+
+    # ── コース登録補助 ─────────────────────────────────────
+
+    def add_register_course(self) -> None:
+        capsule_name = self.ask_capsule_name()
+        if not capsule_name:
+            return
+        meta = self.meta_data_json
+        registered = meta[capsule_name].get("registered_courses")
+        if not registered:
             print("No registered courses found for this capsule")
             print("Redirecting to course registration ...")
             self.register_course()
             return
-        course_meta_data = meta_data_json[registering_capsule_name]["registered_courses"]
 
         while True:
-            lesson_to_register = ui_input("Input the lesson you want to register (e.g. 2-3 for Tuesday's 3rd lesson):")
-            if lesson_to_register is None:
+            raw = ui_input("Input the lesson you want to register (e.g. 2-3 for Tuesday's 3rd lesson):")
+            if raw is None:
                 return
-            lesson_to_register = lesson_to_register.strip()
-            if re.match(r"\d+-\d+", lesson_to_register):
+            raw = raw.strip()
+            if re.match(r"\d+-\d+", raw):
                 break
             print("Invalid input")
 
-        day_to_register = lesson_to_register.split("-")[0]
-        period_to_register = lesson_to_register.split("-")[1]
-        if day_to_register not in course_meta_data:
+        day, period = raw.split("-")[0], raw.split("-")[1]
+        if day not in registered:
             print("Invalid day of week")
             return
-        if period_to_register not in course_meta_data[day_to_register]:
+        if period not in registered[day]:
             print("Invalid lesson period")
             return
 
-        course_info = ui_input('Input course information in the format of "course name, course credit, course category"\n→')
-        if course_info is None:
+        course_info_raw = ui_input(
+            'Input course information in the format of "course name, course credit, course category"\n→'
+        )
+        if course_info_raw is None:
             return
-        course_info_split = course_info.split(",")
-        course_name, course_credit, course_catagory = None, None, None
+        parts = course_info_raw.split(",")
+        course_name = course_credit = course_catagory = None
         try:
-            course_name = None if course_info_split[0].strip() == "" else course_info_split[0].strip()
-            course_credit = course_info_split[1].strip()
-            course_catagory = course_info_split[2].strip()
-        except:
+            course_name = parts[0].strip() or None
+            course_credit = parts[1].strip()
+            course_catagory = parts[2].strip()
+        except (IndexError, AttributeError):
             pass
 
-        original_course_info = course_meta_data[day_to_register][period_to_register]
-        if original_course_info["course_name"] is not None:
-            print("Warning : There is already a registered course for the designated lesson : "
-                  f"\n{original_course_info['course_name']}, {original_course_info['course_credit']}, {original_course_info['course_catagory']}")
-            confirmation = ui_confirm("Do you want to overwrite the existing course information?")
-            if not confirmation:
+        assi_root = Path(meta[capsule_name]["assi_folder_dir"])
+        day_folder = assi_root / DAY_OF_WEEK_REF[day]
+        original = registered[day][period]
+
+        if original["course_name"] is not None:
+            print(
+                "Warning : There is already a registered course for the designated lesson : \n"
+                f"{original['course_name']}, {original['course_credit']}, {original['course_catagory']}"
+            )
+            if not ui_confirm("Do you want to overwrite the existing course information?"):
                 print("Course registration cancelled")
                 return
             os.rename(
-                Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"{period_to_register}限：{original_course_info['course_name']}",
-                Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"Original_{period_to_register}限：{original_course_info['course_name']}"
+                day_folder / f"{period}限：{original['course_name']}",
+                day_folder / f"Original_{period}限：{original['course_name']}",
             )
-            os.makedirs(Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"{period_to_register}限：{course_name}", exist_ok=True)
+            os.makedirs(day_folder / f"{period}限：{course_name}", exist_ok=True)
         elif course_name is None:
             os.rename(
-                Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"{period_to_register}限：{original_course_info['course_name']}",
-                Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"Original_{period_to_register}限：{original_course_info['course_name']}"
+                day_folder / f"{period}限：{original['course_name']}",
+                day_folder / f"Original_{period}限：{original['course_name']}",
             )
         else:
-            os.makedirs(Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"{period_to_register}限：{course_name}", exist_ok=True)
+            os.makedirs(day_folder / f"{period}限：{course_name}", exist_ok=True)
 
-        meta_data_json[registering_capsule_name]["registered_courses"][day_to_register][period_to_register] = {
+        meta[capsule_name]["registered_courses"][day][period] = {
             "course_name": course_name,
             "course_credit": course_credit,
-            "course_catagory": course_catagory
+            "course_catagory": course_catagory,
         }
-        with open(self.meta_data_path, "w", encoding="utf-8") as f:
-            json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+        self._save_meta()
         print("Successfully registered course")
 
+    # ── continuation モード（+ サブ操作） ─────────────────
+
     def continuation_mode(
-            self,
-            is_renaming=False,
-            versioning=False,
-            is_open=False,
-            recover_version=False,
-            open_latest=False,
-            copy_and_move=False,
-            register_course=False
-    ):
-        meta_data_json = self.meta_data_json
-        if len(meta_data_json) == 1:
+        self,
+        is_renaming: bool = False,
+        versioning: bool = False,
+        is_open: bool = False,
+        recover_version: bool = False,
+        open_latest: bool = False,
+        copy_and_move: bool = False,
+        register_course: bool = False,
+    ) -> None:
+        meta = self.meta_data_json
+        if len(meta) == 1:
             print("No default assignment folder is set")
             print("Please set default folder before using")
             return
@@ -489,225 +530,15 @@ class MyAssignment:
             used_capsule_name = self.ask_capsule_name()
             if not used_capsule_name:
                 return
-            used_capsule_real_name = meta_data_json[used_capsule_name]["capsule_name"]
-            capsule_root_folder_dir = Path(meta_data_json[used_capsule_name]["assi_folder_dir"])
-
-        def move_file(file_str, renamed_name):
-            file = Path(file_str)
-            print(f"Processing : {file}")
-
-            if meta_data_json[used_capsule_name]["config"]["use_weekday"]:
-                allowed_day_of_week = ["1", "2", "3", "4", "5"]
-                if meta_data_json[used_capsule_name]["config"]["include_weekends"] == True:
-                    allowed_day_of_week.append("6")
-                    allowed_day_of_week.append("7")
-                day_options = [
-                    f"{d} : {DAY_OF_WEEK_REF_ENG[d]} ({DAY_OF_WEEK_REF[d]})"
-                    for d in allowed_day_of_week
-                ]
-                chosen_day_str = ui_select("Day of week of the lesson:", day_options)
-                if not chosen_day_str:
-                    return
-                day_of_week = chosen_day_str.split(" : ")[0]
-                day_of_week = DAY_OF_WEEK_REF[day_of_week]
-                searching_folder_dir = capsule_root_folder_dir / day_of_week
-                if not searching_folder_dir.exists():
-                    searching_folder_dir.mkdir(parents=True, exist_ok=True)
-            else:
-                searching_folder_dir = capsule_root_folder_dir
-
-            dive_layer = meta_data_json[used_capsule_name]["config"]["dive_layer"]
-            searching_layer = 1
-            while searching_layer <= dive_layer:
-                before_searching_folder_dir = searching_folder_dir
-                searching_folder_dir = self.diving(searching_folder_dir)
-                if before_searching_folder_dir == searching_folder_dir:
-                    break
-                searching_layer += 1
-
-            target_folder_dir = searching_folder_dir
-            print("-----")
-            print(f"original path : {file}")
-            if renamed_name != "":
-                extension = file.suffix
-                file_name = renamed_name + extension
-            else:
-                file_name = file.name
-            destination = target_folder_dir / file_name
-
-            if destination.exists():
-                print(destination)
-                print("This file name already exists.")
-                conflict_options = [
-                    "0 : Auto-resolve (default)",
-                    "1 : Stop moving",
-                    "2 : Rename it",
-                    "3 : Do a versioning",
-                    "4 : Overwrite the existing one",
-                ]
-                reaction_str = ui_select("How do you want to handle it?", conflict_options)
-                if not reaction_str:
-                    return
-                reaction = int(reaction_str[0])
-
-                if reaction == 0:
-                    file_root_name = file.stem
-                    extension = file.suffix
-                    indexing = 1
-                    while destination.exists():
-                        file_name = f"{file_root_name}_{indexing}{extension}"
-                        destination = target_folder_dir / file_name
-                        indexing += 1
-                elif reaction == 1:
-                    print("Moving action interrupted")
-                    return
-                elif reaction == 2:
-                    new_name = ui_input("Rename:")
-                    if not new_name or new_name.strip() == "":
-                        print("Moving action interrupted")
-                        return
-                    extension = file.suffix
-                    file_name = new_name.strip() + extension
-                    destination = target_folder_dir / file_name
-                    if destination.exists():
-                        print("This file name also exists")
-                        print("Moving action interrupted")
-                        return
-                elif reaction == 3:
-                    print("Please restart and select the versioning mode")
-                    return
-                elif reaction == 4:
-                    pass
-                else:
-                    return
-
-            if copy_and_move:
-                shutil.copy2(file, destination)
-            else:
-                shutil.move(file, destination)
-            print(f"Moved to {destination}")
-            print("Successful")
-            return str(destination)
-
-        def version_file(file_str=None, renamed_name=None, is_recovering=False):
-            version_dir = capsule_root_folder_dir / f"{used_capsule_real_name}_versioning"
-            versioning_meta_data_json_path = version_dir / "versioning_meta_data.json"
-            if versioning_meta_data_json_path.exists():
-                with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
-                    versioning_meta_data_json = json.load(f)
-            else:
-                print("No versioning collection exists")
-                print("Please create a versioning collection")
-                self.set_versioning_mode(capsule_name=used_capsule_name)
-                return
-
-            versioning_collections = list(versioning_meta_data_json.keys())
-            selected = ui_select(
-                "Select a versioning collection:",
-                versioning_collections,
-                extra_options=["No desired versioning collection"]
-            )
-            if not selected:
-                return
-            if selected == "No desired versioning collection":
-                print("Redirect to set versioning mode")
-                self.set_versioning_mode(capsule_name=used_capsule_name)
-                return
-
-            selected_versioning_collection = selected
-            active_path = Path(versioning_meta_data_json[selected_versioning_collection]["active_path"])
-
-            version_to_recover = None
-            if is_recovering:
-                version_keys = [
-                    k for k in versioning_meta_data_json[selected_versioning_collection]
-                    if k != "active_path"
-                ]
-                version_to_recover = ui_select("Select a version to recover:", [str(k) for k in version_keys])
-                if not version_to_recover:
-                    return
-                if version_to_recover not in versioning_meta_data_json[selected_versioning_collection]:
-                    print("The designated version does not exist")
-                    return
-
-            comment = ui_input("Input comments (leave blank for none):")
-            comment = None if (comment is None or comment.strip() == "") else comment.strip()
-
-            version_num = len(versioning_meta_data_json[selected_versioning_collection]) - 1
-            archive_file_name = f"{active_path.stem}_ver{version_num}{active_path.suffix}"
-            archived_path = version_dir / archive_file_name
-            shutil.move(active_path, archived_path)
-
-            if is_recovering:
-                version_to_recover_meta_data = versioning_meta_data_json[selected_versioning_collection][version_to_recover]
-                version_to_recover_path = Path(version_to_recover_meta_data["archived_path"])
-                storing_path = active_path.parent / version_to_recover_path.name
-                shutil.move(version_to_recover_path, storing_path)
-            else:
-                if renamed_name == "":
-                    storing_path = active_path.parent / Path(file_str).name
-                else:
-                    extension = Path(file_str).suffix
-                    storing_path = active_path.parent / f"{renamed_name}{extension}"
-                shutil.move(Path(file_str), storing_path)
-
-            versioning_meta_data_json[selected_versioning_collection]["active_path"] = str(storing_path)
-            versioned_file_data = versioning_meta_data_json[selected_versioning_collection][str(version_num)]
-            versioned_file_data["archived_path"] = str(archived_path)
-            versioned_file_data["versioned_datetime"] = str(datetime.datetime.now())
-            versioning_meta_data_json[selected_versioning_collection][str(version_num)] = versioned_file_data
-            versioning_meta_data_json[selected_versioning_collection][str(version_num + 1)] = {
-                "original_path": str(storing_path),
-                "added_datetime": str(datetime.datetime.now()),
-                "comments": comment
-            }
-            if recover_version:
-                del versioning_meta_data_json[selected_versioning_collection][version_to_recover]
-
-            with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
-                json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
-            print("File versioned successfully")
-            return str(storing_path)
-
-        def opening_file(is_open_previous=False):
-            if not is_open_previous:
-                dive_layer = meta_data_json[used_capsule_name]["config"]["dive_layer"]
-                searching_folder_dir = meta_data_json[used_capsule_name]["assi_folder_dir"]
-                if meta_data_json[used_capsule_name]["config"]["use_weekday"] == True:
-                    dive_layer += 1
-                while True:
-                    before_searching_folder_dir = searching_folder_dir
-                    searching_folder_dir = self.diving(searching_folder_dir, is_search_for_file=True)
-                    if before_searching_folder_dir == searching_folder_dir:
-                        break
-                    if Path(searching_folder_dir).is_file():
-                        break
-                    if not ui_confirm("Proceed?"):
-                        break
-            else:
-                if "latest_opened" in meta_data_json["app_config"]:
-                    searching_folder_dir = Path(meta_data_json["app_config"]["latest_opened"])
-                    if not searching_folder_dir.exists():
-                        print("File not exist")
-                        return
-                else:
-                    print("No latest opened file found")
-                    return
-
-            if platform.system() == "Darwin":
-                subprocess.run(["open", "-R", searching_folder_dir])
-            elif platform.system() == "Windows":
-                subprocess.run(["explorer", "/select", searching_folder_dir])
-            else:
-                print("Only MacOS and Windows are supported currently")
-                return
+        else:
+            used_capsule_name = "default"  # open_latest では参照しないが定義は必要
 
         if is_open:
-            opening_file()
+            self._open_file(meta, used_capsule_name)
         elif open_latest:
-            opening_file(is_open_previous=True)
+            self._open_latest_file(meta)
         elif recover_version:
-            version_file(is_recovering=True)
+            self._version_file(meta, used_capsule_name, is_recovering=True)
         elif register_course:
             self.add_register_course()
         else:
@@ -721,58 +552,256 @@ class MyAssignment:
                 renamed_name = r.strip() if r else ""
 
             if not versioning:
-                previous_file_path = move_file(your_assi_path, renamed_name)
+                result_path = self._move_file(meta, used_capsule_name, your_assi_path, renamed_name, copy_and_move)
             else:
-                previous_file_path = version_file(file_str=your_assi_path, renamed_name=renamed_name)
+                result_path = self._version_file(meta, used_capsule_name, file_str=your_assi_path, renamed_name=renamed_name)
 
-            meta_data_json["app_config"]["latest_opened"] = previous_file_path
-            with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+            meta["app_config"]["latest_opened"] = result_path
+            self._save_meta()
 
-    def register_course(self):
-        while True:
-            lesson_num_str = ui_input("Input number for lessons per day:")
-            if lesson_num_str is None:
+    def _move_file(
+        self,
+        meta: dict,
+        capsule_name: str,
+        file_str: str,
+        renamed_name: str,
+        copy_and_move: bool,
+    ) -> str | None:
+        file = Path(file_str)
+        print(f"Processing : {file}")
+        capsule_root = Path(meta[capsule_name]["assi_folder_dir"])
+        cfg = meta[capsule_name]["config"]
+
+        if cfg["use_weekday"]:
+            allowed = ["1", "2", "3", "4", "5"]
+            if cfg["include_weekends"]:
+                allowed += ["6", "7"]
+            day_options = [f"{d} : {DAY_OF_WEEK_REF_ENG[d]} ({DAY_OF_WEEK_REF[d]})" for d in allowed]
+            chosen_day = ui_select("Day of week of the lesson:", day_options)
+            if not chosen_day:
                 return None
-            if lesson_num_str.isdigit() and int(lesson_num_str) >= 2:
-                lesson_num = int(lesson_num_str)
+            day_key = chosen_day.split(" : ")[0]
+            searching_folder_dir = capsule_root / DAY_OF_WEEK_REF[day_key]
+            searching_folder_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            searching_folder_dir = capsule_root
+
+        for _ in range(cfg["dive_layer"]):
+            prev = searching_folder_dir
+            searching_folder_dir = self.diving(searching_folder_dir)
+            if prev == searching_folder_dir:
+                break
+
+        file_name = f"{renamed_name}{file.suffix}" if renamed_name else file.name
+        destination = searching_folder_dir / file_name
+
+        print("-----")
+        print(f"original path : {file}")
+
+        if destination.exists():
+            print(destination)
+            print("This file name already exists.")
+            conflict_options = [
+                "0 : Auto-resolve (default)",
+                "1 : Stop moving",
+                "2 : Rename it",
+                "3 : Do a versioning",
+                "4 : Overwrite the existing one",
+            ]
+            reaction_str = ui_select("How do you want to handle it?", conflict_options)
+            if not reaction_str:
+                return None
+            reaction = int(reaction_str[0])
+
+            if reaction == 0:
+                idx = 1
+                stem, ext = file.stem, file.suffix
+                while destination.exists():
+                    destination = searching_folder_dir / f"{stem}_{idx}{ext}"
+                    idx += 1
+            elif reaction == 1:
+                print("Moving action interrupted")
+                return None
+            elif reaction == 2:
+                new_name = ui_input("Rename:")
+                if not new_name or not new_name.strip():
+                    print("Moving action interrupted")
+                    return None
+                destination = searching_folder_dir / f"{new_name.strip()}{file.suffix}"
+                if destination.exists():
+                    print("This file name also exists")
+                    print("Moving action interrupted")
+                    return None
+            elif reaction == 3:
+                print("Please restart and select the versioning mode")
+                return None
+            elif reaction == 4:
+                pass
+
+        if copy_and_move:
+            shutil.copy2(file, destination)
+        else:
+            shutil.move(file, destination)
+        print(f"Moved to {destination}")
+        print("Successful")
+        return str(destination)
+
+    def _version_file(
+        self,
+        meta: dict,
+        capsule_name: str,
+        file_str: str | None = None,
+        renamed_name: str | None = None,
+        is_recovering: bool = False,
+    ) -> str | None:
+        capsule_root = Path(meta[capsule_name]["assi_folder_dir"])
+        capsule_real_name = meta[capsule_name]["capsule_name"]
+        version_dir = capsule_root / f"{capsule_real_name}_versioning"
+        versioning_meta = self._load_versioning_meta(capsule_name)
+
+        if versioning_meta is None:
+            print("No versioning collection exists")
+            print("Please create a versioning collection")
+            self.set_versioning_mode(capsule_name=capsule_name)
+            return None
+
+        selected = ui_select(
+            "Select a versioning collection:",
+            list(versioning_meta.keys()),
+            extra_options=["No desired versioning collection"],
+        )
+        if not selected:
+            return None
+        if selected == "No desired versioning collection":
+            print("Redirect to set versioning mode")
+            self.set_versioning_mode(capsule_name=capsule_name)
+            return None
+
+        active_path = Path(versioning_meta[selected]["active_path"])
+
+        version_to_recover = None
+        if is_recovering:
+            version_keys = [k for k in versioning_meta[selected] if k != "active_path"]
+            version_to_recover = ui_select("Select a version to recover:", [str(k) for k in version_keys])
+            if not version_to_recover:
+                return None
+            if version_to_recover not in versioning_meta[selected]:
+                print("The designated version does not exist")
+                return None
+
+        comment_raw = ui_input("Input comments (leave blank for none):")
+        comment = comment_raw.strip() if comment_raw and comment_raw.strip() else None
+
+        version_num = len(versioning_meta[selected]) - 1
+        archive_file_name = f"{active_path.stem}_ver{version_num}{active_path.suffix}"
+        archived_path = version_dir / archive_file_name
+        shutil.move(active_path, archived_path)
+
+        if is_recovering:
+            recover_meta = versioning_meta[selected][version_to_recover]
+            recover_path = Path(recover_meta["archived_path"])
+            storing_path = active_path.parent / recover_path.name
+            shutil.move(recover_path, storing_path)
+        else:
+            src = Path(file_str)
+            storing_name = f"{renamed_name}{src.suffix}" if renamed_name else src.name
+            storing_path = active_path.parent / storing_name
+            shutil.move(src, storing_path)
+
+        versioning_meta[selected]["active_path"] = str(storing_path)
+        v_data = versioning_meta[selected][str(version_num)]
+        v_data["archived_path"] = str(archived_path)
+        v_data["versioned_datetime"] = str(datetime.datetime.now())
+        versioning_meta[selected][str(version_num)] = v_data
+        versioning_meta[selected][str(version_num + 1)] = {
+            "original_path": str(storing_path),
+            "added_datetime": str(datetime.datetime.now()),
+            "comments": comment,
+        }
+        if is_recovering:
+            del versioning_meta[selected][version_to_recover]
+
+        self._save_versioning_meta(capsule_name, versioning_meta)
+        print("File versioned successfully")
+        return str(storing_path)
+
+    def _open_file(self, meta: dict, capsule_name: str) -> None:
+        searching_folder_dir: Path | str = meta[capsule_name]["assi_folder_dir"]
+        while True:
+            prev = searching_folder_dir
+            searching_folder_dir = self.diving(searching_folder_dir, is_search_for_file=True)
+            if prev == searching_folder_dir:
+                break
+            if Path(searching_folder_dir).is_file():
+                break
+            if not ui_confirm("Proceed?"):
+                break
+        self._reveal_in_explorer(searching_folder_dir)
+
+    def _open_latest_file(self, meta: dict) -> None:
+        latest = meta.get("app_config", {}).get("latest_opened")
+        if not latest:
+            print("No latest opened file found")
+            return
+        path = Path(latest)
+        if not path.exists():
+            print("File not exist")
+            return
+        self._reveal_in_explorer(path)
+
+    @staticmethod
+    def _reveal_in_explorer(target) -> None:
+        system = platform.system()
+        if system == "Darwin":
+            subprocess.run(["open", "-R", str(target)])
+        elif system == "Windows":
+            subprocess.run(["explorer", "/select", str(target)])
+        else:
+            print("Only MacOS and Windows are supported currently")
+
+    # ── コース初期登録 ─────────────────────────────────────
+
+    def register_course(self) -> list | None:
+        while True:
+            raw = ui_input("Input number for lessons per day:")
+            if raw is None:
+                return None
+            if raw.isdigit() and int(raw) >= 2:
+                lesson_num = int(raw)
                 break
             print("Please input a number larger than or equal to 2")
 
-        registered_courses_info = {}
-        print("Please input the course information for the lessons in the format of \"course name, course credit, course category\"")
+        registered_courses_info: dict = {}
+        print('Please input the course information for the lessons in the format of "course name, course credit, course category"')
         print("If there is no course for the lesson, just press enter")
 
         for day in range(1, 6):
             print("----------")
-            print(DAY_OF_WEEK_REF_ENG[f"{day}"])
-            day_course_info = {}
+            print(DAY_OF_WEEK_REF_ENG[str(day)])
+            day_course_info: dict = {}
             for lesson in range(1, lesson_num + 1):
-                course_registered = ui_input(f"Lesson {lesson} :")
-                if course_registered is None:
-                    course_registered = ""
-                course_info = course_registered.split(",")
-                course_name, course_credit, course_catagory = None, None, None
+                raw_info = ui_input(f"Lesson {lesson} :") or ""
+                parts = raw_info.split(",")
+                course_name = course_credit = course_catagory = None
                 try:
-                    course_name = None if course_info[0].strip() == "" else course_info[0].strip()
-                    course_credit = course_info[1].strip()
-                    course_catagory = course_info[2].strip()
-                except:
+                    course_name = parts[0].strip() or None
+                    course_credit = parts[1].strip()
+                    course_catagory = parts[2].strip()
+                except (IndexError, AttributeError):
                     pass
-                day_course_info[f"{lesson}"] = {
+                day_course_info[str(lesson)] = {
                     "course_name": course_name,
                     "course_credit": course_credit,
-                    "course_catagory": course_catagory
+                    "course_catagory": course_catagory,
                 }
-            registered_courses_info[f"{day}"] = day_course_info
+            registered_courses_info[str(day)] = day_course_info
 
         print("---------")
         print("Confirmation of registered courses : ")
-        for day in registered_courses_info:
+        for day, lessons in registered_courses_info.items():
             print(DAY_OF_WEEK_REF_ENG[day])
-            for lesson in registered_courses_info[day]:
-                course_info = registered_courses_info[day][lesson]
-                print(f"Lesson {lesson} : {course_info['course_name']}, {course_info['course_credit']}, {course_info['course_catagory']}")
+            for lesson, info in lessons.items():
+                print(f"Lesson {lesson} : {info['course_name']}, {info['course_credit']}, {info['course_catagory']}")
         print("---------")
         if not ui_confirm("Confirm registered courses?"):
             print("Course registration cancelled")
@@ -805,26 +834,26 @@ class MyAssignment:
 
         print("Building assignment directory ...")
         os.mkdir(Path(new_sem_dir) / sem_name)
-        for day in registered_courses_info:
-            day_folder_name = DAY_OF_WEEK_REF[day]
-            day_folder_dir = Path(new_sem_dir) / sem_name / day_folder_name
-            day_folder_dir.mkdir(parents=True, exist_ok=True)
-            for lesson in registered_courses_info[day]:
-                course_name = registered_courses_info[day][lesson]["course_name"]
-                if course_name is not None:
-                    course_folder_name = f"{lesson}限：{course_name}"
-                    course_folder_dir = day_folder_dir / course_folder_name
-                    course_folder_dir.mkdir(parents=True, exist_ok=True)
+        for day, lessons in registered_courses_info.items():
+            day_folder = Path(new_sem_dir) / sem_name / DAY_OF_WEEK_REF[day]
+            day_folder.mkdir(parents=True, exist_ok=True)
+            for lesson, info in lessons.items():
+                if info["course_name"] is not None:
+                    (day_folder / f"{lesson}限：{info['course_name']}").mkdir(parents=True, exist_ok=True)
+
         print("Successfully registered courses and built assignment directory")
         return [str(Path(new_sem_dir) / sem_name), registered_courses_info]
 
-    def initialization_mode(self, config_conversation=False, init_with_reg=False):
+    # ── 初期化モード ───────────────────────────────────────
+
+    def initialization_mode(
+        self, config_conversation: bool = False, init_with_reg: bool = False
+    ) -> None:
         if init_with_reg:
             course_info = self.register_course()
             if not course_info:
                 return
-            new_folder_dir = course_info[0]
-            register_course_info = course_info[1]
+            new_folder_dir, register_course_info = course_info
         else:
             print("Create new assignment capsule here")
             is_confirmed = False
@@ -850,198 +879,174 @@ class MyAssignment:
             return
         capsule_name = capsule_name.strip()
 
+        cfg = dict(CONFIG)
+        if config_conversation:
+            cfg["use_weekday"] = ui_confirm("Use the weekday based allocation system?")
+            cfg["include_weekends"] = ui_confirm("Include weekends in your file system?")
+            dl_raw = ui_input("Designate the number of dive layers:")
+            cfg["dive_layer"] = int(dl_raw) if (dl_raw and dl_raw.isdigit()) else 1
+
         meta_data_raw = {
             "assi_folder_dir": new_folder_dir,
             "capsule_name": capsule_name,
-            "config": CONFIG,
-            "registered_courses": register_course_info if init_with_reg else None
+            "config": cfg,
+            "registered_courses": register_course_info if init_with_reg else None,
         }
 
-        if config_conversation:
-            is_use_weekday = ui_confirm("Use the weekday based allocation system?")
-            is_include_weekends = ui_confirm("Include weekends in your file system?")
-            dive_layer_str = ui_input("Designate the number of dive layers:")
-            dive_layer = int(dive_layer_str) if (dive_layer_str and dive_layer_str.isdigit()) else 1
-            config_items_list = list(CONFIG.keys())
-            meta_data_raw["config"] = {
-                config_items_list[0]: is_use_weekday,
-                config_items_list[1]: is_include_weekends,
-                config_items_list[2]: dive_layer,
-            }
-
-        if len(self.meta_data_json) == 1:
-            meta_data_json = self.meta_data_json
-            meta_data_json["default"] = meta_data_raw
-            with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                json.dump(meta_data_json, f, ensure_ascii=False)
-            print("New capsule created")
-            print(f"capsule name : {capsule_name}")
-            print(f"assignment folder directory : {new_folder_dir}")
+        meta = self.meta_data_json
+        if len(meta) == 1:
+            meta["default"] = meta_data_raw
+            self._save_meta()
         else:
             with open(self.meta_data_path, "r", encoding="utf-8") as f:
-                meta_data_current = json.load(f)
-            while capsule_name in meta_data_current:
+                meta = json.load(f)
+            while capsule_name in meta:
                 print("Capsule name already exists")
                 capsule_name = ui_input("Input your new capsule name:")
                 if not capsule_name:
                     return
                 capsule_name = capsule_name.strip()
+            meta_data_raw["capsule_name"] = capsule_name
 
             if ui_confirm("Make to default?"):
-                current_default = meta_data_current["default"]
-                new_name_for_current_default = current_default["capsule_name"]
-                meta_data_current[new_name_for_current_default] = current_default
-                meta_data_current["default"] = meta_data_raw
-                with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                    json.dump(meta_data_current, f, ensure_ascii=False, indent=3)
-                print("New capsule created and Set to default")
-                print(f"capsule name : {capsule_name}")
-                print(f"assignment folder directory : {new_folder_dir}")
+                current_default = meta["default"]
+                meta[current_default["capsule_name"]] = current_default
+                meta["default"] = meta_data_raw
             else:
-                meta_data_current[capsule_name] = meta_data_raw
-                with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                    json.dump(meta_data_current, f, ensure_ascii=False, indent=3)
-                print("New capsule created")
-                print(f"capsule name : {capsule_name}")
-                print(f"assignment folder directory : {new_folder_dir}")
+                meta[capsule_name] = meta_data_raw
 
-    def settings_mode(self):
+            with open(self.meta_data_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=3)
+
+        print("New capsule created")
+        print(f"capsule name : {capsule_name}")
+        print(f"assignment folder directory : {new_folder_dir}")
+
+    # ── 設定モード ─────────────────────────────────────────
+
+    def settings_mode(self) -> None:
         SETTING_ITEMS = {
             "1": "change default",
             "2": "change assignment folder",
             "3": "edit configurations",
             "4": "edit app configurations",
-            "5": "update"
+            "5": "update",
         }
-        meta_data_json = self.meta_data_json
-        setting_options = [f"{k} : {v}" for k, v in SETTING_ITEMS.items()]
-        chosen = ui_select("Choose a setting item:", setting_options)
+        meta = self.meta_data_json
+        chosen = ui_select("Choose a setting item:", [f"{k} : {v}" for k, v in SETTING_ITEMS.items()])
         if not chosen:
             return
-        setting_item_selected = chosen.split(" : ")[0]
+        item = chosen.split(" : ")[0]
 
-        if setting_item_selected in ["1", "2"]:
-            if len(meta_data_json) == 1:
-                print("There is no capsule to set")
-                return
+        if item in ("1", "2") and len(meta) == 1:
+            print("There is no capsule to set")
+            return
 
-        if setting_item_selected == "1":
-            if len(meta_data_json) == 2:
+        if item == "1":
+            if len(meta) == 2:
                 print("There is only one capsule which is already in default")
                 return
-            print("Choose a capsule to set default")
             setting_capsule_name = self.ask_capsule_name()
             if not setting_capsule_name:
                 return
             if setting_capsule_name == "default":
                 print("The selected capsule is already in default")
                 return
-            current_default_capsule_real_name = meta_data_json["default"]["capsule_name"]
-            meta_data_json[current_default_capsule_real_name] = meta_data_json["default"]
-            meta_data_json["default"] = meta_data_json[setting_capsule_name]
-            del meta_data_json[setting_capsule_name]
-            with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+            current_default_real = meta["default"]["capsule_name"]
+            meta[current_default_real] = meta["default"]
+            meta["default"] = meta[setting_capsule_name]
+            del meta[setting_capsule_name]
+            self._save_meta()
             print(f"Successfully set {setting_capsule_name} to default")
 
-        elif setting_item_selected == "2":
+        elif item == "2":
             setting_capsule_name = self.ask_capsule_name()
             if not setting_capsule_name:
                 return
             is_confirmed = False
             while not is_confirmed:
-                new_folder_dir = ui_input("Input the new directory for your assignment folder:")
-                if not new_folder_dir:
+                new_dir = ui_input("Input the new directory for your assignment folder:")
+                if not new_dir:
                     return
-                new_folder_dir = new_folder_dir.strip()
-                if Path(new_folder_dir).is_dir():
-                    print(f"Confirmation : {new_folder_dir}")
+                new_dir = new_dir.strip()
+                if Path(new_dir).is_dir():
+                    print(f"Confirmation : {new_dir}")
                     is_confirmed = ui_confirm("Please confirm the directory of your new assignment folder")
                 else:
                     print("The designated is a file path instead of a directory.")
                     if ui_confirm("Use the parent directory of your designated file path as your assignment directory?"):
                         is_confirmed = True
-                        new_folder_dir = str(Path(new_folder_dir).resolve().parent)
-            original_assi_folder_dir = meta_data_json[setting_capsule_name]["assi_folder_dir"]
-            versioning_folder_name = f"{meta_data_json[setting_capsule_name]['capsule_name']}_versioning"
-            origial_versioning_folder_path = Path(original_assi_folder_dir) / versioning_folder_name
-            meta_data_json[setting_capsule_name]["assi_folder_dir"] = new_folder_dir
-            if origial_versioning_folder_path.exists():
-                shutil.move(origial_versioning_folder_path, Path(new_folder_dir))
-            print(f"Successfully changed to : {new_folder_dir}")
+                        new_dir = str(Path(new_dir).resolve().parent)
+            original_root = Path(meta[setting_capsule_name]["assi_folder_dir"])
+            versioning_folder = original_root / f"{meta[setting_capsule_name]['capsule_name']}_versioning"
+            meta[setting_capsule_name]["assi_folder_dir"] = new_dir
+            if versioning_folder.exists():
+                shutil.move(versioning_folder, Path(new_dir))
+            print(f"Successfully changed to : {new_dir}")
 
-        elif setting_item_selected == "3":
-            meta_data_json = self.meta_data_json
+        elif item == "3":
             setting_capsule_name = self.ask_capsule_name()
             if not setting_capsule_name:
                 return
             config_items = list(CONFIG_CONVENTION.keys())
-
-            is_continue_to_set = True
-            while is_continue_to_set:
+            is_continue = True
+            while is_continue:
                 print("Current Settings:")
                 config_options = []
-                for idx, config_item in enumerate(config_items):
-                    orig = meta_data_json[setting_capsule_name]["config"][config_item]
+                for config_item in config_items:
+                    orig = meta[setting_capsule_name]["config"][config_item]
                     label = f"{config_item} ({CONFIG_CONVENTION[config_item]}) - {orig}"
-                    print(f"{idx+1} : {label}")
+                    print(f"  {label}")
                     config_options.append(label)
 
-                chosen_config = ui_select("Select item to edit:", config_options)
-                if not chosen_config:
+                chosen_cfg = ui_select("Select item to edit:", config_options)
+                if not chosen_cfg:
                     break
-                item_to_set = config_items[config_options.index(chosen_config)]
-                orig_val = meta_data_json[setting_capsule_name]["config"][item_to_set]
+                key = config_items[config_options.index(chosen_cfg)]
+                orig_val = meta[setting_capsule_name]["config"][key]
 
                 if isinstance(orig_val, bool):
-                    if ui_confirm(f"Switch {item_to_set} from {orig_val} to {not orig_val}?"):
-                        meta_data_json[setting_capsule_name]["config"][item_to_set] = not orig_val
+                    if ui_confirm(f"Switch {key} from {orig_val} to {not orig_val}?"):
+                        meta[setting_capsule_name]["config"][key] = not orig_val
                 elif isinstance(orig_val, int):
-                    new_val_str = ui_input(f"Designate new value for {item_to_set}:", default=str(orig_val))
-                    new_val = int(new_val_str) if (new_val_str and new_val_str.isdigit()) else orig_val
-                    meta_data_json[setting_capsule_name]["config"][item_to_set] = new_val
-
-                is_continue_to_set = ui_confirm("Edit other settings?")
+                    new_val_str = ui_input(f"Designate new value for {key}:", default=str(orig_val))
+                    meta[setting_capsule_name]["config"][key] = (
+                        int(new_val_str) if (new_val_str and new_val_str.isdigit()) else orig_val
+                    )
+                is_continue = ui_confirm("Edit other settings?")
 
             print("Current Settings:")
             for config_item in config_items:
-                new_value = meta_data_json[setting_capsule_name]["config"][config_item]
-                print(f"{config_item} ({CONFIG_CONVENTION[config_item]}) - {new_value}")
-            with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+                print(f"{config_item} ({CONFIG_CONVENTION[config_item]}) - {meta[setting_capsule_name]['config'][config_item]}")
+            self._save_meta()
 
-        elif setting_item_selected == "4":
-            if "app_config" in meta_data_json:
-                bool_items = [k for k in meta_data_json["app_config"] if isinstance(meta_data_json["app_config"][k], bool)]
-                if not bool_items:
-                    print("No configurable app settings found")
-                    return
-                is_continue_to_set = True
-                while is_continue_to_set:
-                    print("Current app configurations : ")
-                    app_options = [f"{k} - {meta_data_json['app_config'][k]}" for k in bool_items]
-                    for opt in app_options:
-                        print(f"  {opt}")
-                    chosen_app = ui_select("Select item to toggle:", app_options)
-                    if not chosen_app:
-                        break
-                    item_key = bool_items[app_options.index(chosen_app)]
-                    meta_data_json["app_config"][item_key] = not meta_data_json["app_config"][item_key]
-                    is_continue_to_set = ui_confirm("Edit other app configurations?")
-
-                with open(self.meta_data_path, "w", encoding="utf-8") as f:
-                    json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+        elif item == "4":
+            app_cfg = meta.get("app_config", {})
+            bool_items = [k for k, v in app_cfg.items() if isinstance(v, bool)]
+            if not bool_items:
+                print("No configurable app settings found")
+                return
+            is_continue = True
+            while is_continue:
                 print("Current app configurations : ")
-                for k in bool_items:
-                    print(f"{k} - {meta_data_json['app_config'][k]}")
-            else:
-                print("No app configuration found")
-                meta_data_json["app_config"] = {}
+                app_options = [f"{k} - {app_cfg[k]}" for k in bool_items]
+                for opt in app_options:
+                    print(f"  {opt}")
+                chosen_app = ui_select("Select item to toggle:", app_options)
+                if not chosen_app:
+                    break
+                key = bool_items[app_options.index(chosen_app)]
+                app_cfg[key] = not app_cfg[key]
+                is_continue = ui_confirm("Edit other app configurations?")
+            self._save_meta()
+            print("Current app configurations : ")
+            for k in bool_items:
+                print(f"{k} - {app_cfg[k]}")
 
-        elif setting_item_selected == "5":
+        elif item == "5":
             try:
                 from updater import update_from_git
-            except:
+            except ImportError:
                 print("Unable to obtain the updater script")
                 return
             update_from_git(self.current_dir, self.my_path)
@@ -1050,63 +1055,27 @@ class MyAssignment:
         else:
             print("Invalid")
 
-    def help(self):
-        info = ("""
-                1 : continuing
-                1n : renaming
-                1v : versioning
-                1o : opening
-                1c : recovering
-                1l : opening latest
-                1p : copy and move
-                1r : registering courses
-                2 : creating new versioning collection
-                2q : query versioning info
-                2c : clear versioning data
-                3 : creating new capsule
-                3i : initialization with conversation
-                3r : initialization with registrastion
-                4 : settings
-                """)
-        print(info)
 
+# ── エントリーポイント ─────────────────────────────────────
 
-def main():
+def main() -> None:
+    print("Welcome to MyAssignment\n")
     ma = MyAssignment()
 
-    mode_options = [
-        "1  : continuation",
-        "1n : continuation + rename",
-        "1v : continuation + versioning",
-        "1o : open file",
-        "1c : recover version",
-        "1l : open latest",
-        "1p : copy and move",
-        "1r : register course",
-        "2  : new versioning collection",
-        "2q : query versioning",
-        "2c : clear versioning",
-        "3  : new capsule",
-        "3i : init with conversation",
-        "3r : init with registration",
-        "4  : settings",
-    ]
-    chosen = ui_select("MyAssignment — Select a mode (or type directly e.g. 1v):", mode_options)
+    chosen = ui_select("MyAssignment — Select a mode (or type directly e.g. 1v):", _MODE_OPTIONS)
     if chosen is None:
         print("Cancelled.")
         return
 
-    # 直接入力（例: "1v"）か、選択肢の文字列（例: "1v : continuation + versioning"）かを判定
-    if " : " in chosen:
-        mode = chosen.split(" : ")[0].strip()
-    else:
-        mode = chosen.strip()
-    print("")
+    mode = chosen.split(" : ")[0].strip() if " : " in chosen else chosen.strip()
+    print()
 
-    regex_checker = re.fullmatch(r"\d[a-zA-Z]?", mode)
-    if not regex_checker:
+    if not re.fullmatch(r"\d[a-zA-Z]?", mode):
         print("Invalid mode")
-    elif "1" in mode:
+        return
+
+    digit = mode[0]
+    if digit == "1":
         ma.continuation_mode(
             is_renaming="n" in mode,
             versioning="v" in mode,
@@ -1114,23 +1083,18 @@ def main():
             recover_version="c" in mode,
             open_latest="l" in mode,
             copy_and_move="p" in mode,
-            register_course="r" in mode
+            register_course="r" in mode,
         )
-    elif "2" in mode:
-        ma.set_versioning_mode(
-            is_query="q" in mode,
-            is_clear="c" in mode
-        )
-    elif "3" in mode:
-        ma.initialization_mode(
-            config_conversation="i" in mode,
-            init_with_reg="r" in mode
-        )
-    elif "4" in mode:
+    elif digit == "2":
+        ma.set_versioning_mode(is_query="q" in mode, is_clear="c" in mode)
+    elif digit == "3":
+        ma.initialization_mode(config_conversation="i" in mode, init_with_reg="r" in mode)
+    elif digit == "4":
         ma.settings_mode()
     else:
         print("Invalid mode")
-    print("")
+
+    print()
 
 
 if __name__ == "__main__":
@@ -1140,12 +1104,12 @@ if __name__ == "__main__":
 """
 TODOS:
 1 in initialization, confirm no files are set to client folder *
-2 avoid user from chooing app config which is not a capsule name  *
+2 avoid user from choosing app config which is not a capsule name  *
 3 allow users to choose to copy and move *
 4 allow users to terminate diving *
 5 strengthen mode input check (now, for eg cat1 will also be treated as 1 and c in mode) *
 6 the capsulename_versioning folder is not a normal folder so hide it in menu *
-7 Space is accidentialy added the the collection dir name when setting
+7 Space is accidentally added to the collection dir name when setting
 8 allow users to alter names of folders and files without crashing the app
 9 Allow users to directly operate versioning collections after query
 
