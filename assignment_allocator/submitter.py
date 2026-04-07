@@ -891,7 +891,8 @@ def main():
             is_open="o" in mode, 
             recover_version="c" in mode, 
             open_latest="l" in mode,
-            copy_and_move="p" in mode
+            copy_and_move="p" in mode,
+            register_course="r" in mode
             )
     elif "2" in mode:
         ma.set_versioning_mode(
