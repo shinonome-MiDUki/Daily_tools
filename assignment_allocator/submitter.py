@@ -882,6 +882,8 @@ class MyAssignment:
         print(info)
 
 def main():
+    ma = MyAssignment()
+    
     mode_explanation = """Input 
     1 : continuation
     2 : versioning
@@ -891,7 +893,6 @@ def main():
     print(mode_explanation)
     mode = str(input("→input : "))
     print("")
-    ma = MyAssignment()
 
     regex_checker = re.fullmatch(r"\d[a-z|A-Z]?", mode)
     if not regex_checker:
