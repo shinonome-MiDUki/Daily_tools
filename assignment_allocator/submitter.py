@@ -580,13 +580,13 @@ class MyAssignment:
             lesson_num = input("Input number for lessons per day : ")
             lesson_num = int(lesson_num)
         registered_courses_info = {}
+        print("Please input the course information for the lessons in the format of \"course name, course credit, course catagory\"")
+        print("If there is no course for the lesson, just press enter")
         for day in range(1,6):
-            print("Please input the course information for the lessons in the format of \"course name, course credit, course catagory\"")
-            print("If there is no course for the lesson, just press enter")
             print("----------")
             print(DAY_OF_WEEK_REF_ENG[f"{day}"])
             day_course_info = {}
-            for lesson in range(1, lesson_num):
+            for lesson in range(1, lesson_num+1):
                 course_registered = str(input(f"Lesson {lesson} : "))
                 course_info = course_registered.split(",")
                 course_name, course_credit, course_catagory = None, None, None
