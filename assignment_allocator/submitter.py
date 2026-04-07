@@ -20,6 +20,15 @@ DAY_OF_WEEK_REF = {
     "6" : "土",
     "7" : "日"
 }
+DAY_OF_WEEK_REF_ENG = {
+    "1" : "Mon",
+    "2" : "Tue",        
+    "3" : "Wed",
+    "4" : "Thu",
+    "5" : "Fri",
+    "6" : "Sat",
+    "7" : "Sun"
+}
 CONFIG = {
     "use_weekday": True,
     "include_weekends": False,
@@ -43,6 +52,9 @@ class MyAssignment:
             print("No valid assignment folder is set")
             print("Please set a valid folder before using")
             return
+        if "show_course_today" in self.meta_data_json["app_config"]:
+            if self.meta_data_json["app_config"]["show_course_today"] == True:
+                self.show_course_today()
         
     def ask_capsule_name(self):
         if len(self.meta_data_json) == 1:
@@ -108,6 +120,24 @@ class MyAssignment:
             searching_folder_dir = searching_folder_dir / target_names[int(target_selected)-1]
 
         return searching_folder_dir
+    
+    def show_course_today(self):
+        #use default capsule for showing today's course
+        meta_data_json = self.meta_data_json
+        today_day_of_week = str(datetime.datetime.today().isoweekday())
+        defult_capsule_info = self.meta_data_json["default"]
+        if "registered_courses" in defult_capsule_info and defult_capsule_info["registered_courses"] != None:
+            registered_courses = defult_capsule_info["registered_courses"]
+            if today_day_of_week in registered_courses:
+                today_courses = registered_courses[today_day_of_week]
+                print("Today's courses : ")
+                for lesson in today_courses:
+                    course_info = today_courses[lesson]
+                    if course_info["course_name"] != None:
+                        print(f"Lesson {lesson} : {course_info['course_name']}")
+            else:
+                print("No course registered for today")
+        print(" ")
     
     def set_versioning_mode(self, capsule_name=None, is_query=False, is_clear=False):
         def set_version(capsule_name):
@@ -261,6 +291,53 @@ class MyAssignment:
         else:
             set_version(capsule_name)
 
+    def add_register_course(self):
+        registering_capsule_name = self.ask_capsule_name()
+        meta_data_json = self.meta_data_json
+        if "registered_courses" not in meta_data_json[registering_capsule_name] or meta_data_json[registering_capsule_name]["registered_courses"] == None:
+            print("No registered courses found for this capsule")
+            print("Redirecting to course registration ...")
+            self.register_course()
+            return
+        course_meta_data = meta_data_json[registering_capsule_name]["registered_courses"]
+        lesson_to_register = str(input("Input the lesson you want to register (e.g. 2-3 for Tuesday's 3rd lesson) : ")).strip()
+        while not re.match(r"\d+-\d+", lesson_to_register):
+            print("Invalid input")
+            lesson_to_register = str(input("Input the lesson you want to register (e.g. 2-3 for Tuesday's 3rd lesson) : ")).strip()
+        day_to_register = lesson_to_register.split("-")[0]
+        period_to_register = lesson_to_register.split("-")[1]
+        if day_to_register not in course_meta_data:
+            print("Invalid day of week")
+            return
+        if period_to_register not in course_meta_data[day_to_register]:
+            print("Invalid lesson period")
+            return
+        course_info = str(input("Input course information in the format of \"course name, course credit, course catagory\" \n→ "))
+        course_info_split = course_info.split(",")
+        course_name, course_credit, course_catagory = None, None, None
+        try:
+            course_name = course_info_split[0].strip(" ")
+            course_credit = course_info_split[1].strip(" ")
+            course_catagory = course_info_split[2].strip(" ")
+        except:
+            pass
+        original_course_info = course_meta_data[day_to_register][period_to_register]
+        if original_course_info["course_name"] != None:
+            print("Warning : There is already a registered course for the designated lesson : "
+                  f"\n{original_course_info['course_name']}, {original_course_info['course_credit']}, {original_course_info['course_catagory']}")
+            confirmation = str(input("Do you want to overwrite the existing course information? (y/N) "))
+            if confirmation not in ["y", "Y"]:
+                print("Course registration cancelled")
+                return
+        meta_data_json[registering_capsule_name]["registered_courses"][day_to_register][period_to_register] = {
+            "course_name": course_name,
+            "course_credit": course_credit,
+            "course_catagory": course_catagory
+        }
+        with open(self.meta_data_path, "w", encoding="utf-8") as f:
+            json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
+
+
     def continuation_mode(
             self, 
             is_renaming=False, 
@@ -268,7 +345,8 @@ class MyAssignment:
             is_open=False, 
             recover_version=False, 
             open_latest=False, 
-            copy_and_move=False
+            copy_and_move=False,
+            register_course=False
             ):
         meta_data_json = self.meta_data_json
         if len(meta_data_json) == 1:
@@ -477,6 +555,8 @@ class MyAssignment:
             opening_file(is_open_previous=True)
         elif recover_version:
             version_file(is_recovering=True)
+        elif register_course:
+            self.add_register_course()
         else:
             your_assi_path = str(input("Drag your assignment here : ")).strip()
             renamed_name = str(input("Rename as : ")).strip() if is_renaming else ""
@@ -489,30 +569,122 @@ class MyAssignment:
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
 
-    def initialization_mode(self, config_conversation=False):
-        print("Create new assignment capsule here")
+    def register_course(self):
+        lesson_num = input("Input number for lessons per day : ")
+        while not lesson_num.isdigit():
+            print("Please input a number")
+            lesson_num = input("Input number for lessons per day : ")
+        lesson_num = int(lesson_num)
+        while lesson_num < 2:
+            print("Please input a number larger than 2")
+            lesson_num = input("Input number for lessons per day : ")
+            lesson_num = int(lesson_num)
+        registered_courses_info = {}
+        for day in range(1,6):
+            print("Please input the course information for the lessons in the format of \"course name, course credit, course catagory\"")
+            print("If there is no course for the lesson, just press enter")
+            print("----------")
+            print(DAY_OF_WEEK_REF_ENG[f"{day}"])
+            day_course_info = {}
+            for lesson in range(1, lesson_num):
+                course_registered = str(input(f"Lesson {lesson} : "))
+                course_info = course_registered.split(",")
+                course_name, course_credit, course_catagory = None, None, None
+                try:
+                    course_name = course_info[0].strip(" ")
+                    course_credit = course_info[1].strip(" ")
+                    course_catagory = course_info[2].strip(" ")
+                except:
+                    pass
+                day_course_info[f"{lesson}"] = {
+                    "course_name" : course_name,
+                    "course_credit" : course_credit,
+                    "course_catagory" : course_catagory
+                }
+            registered_courses_info[f"{day}"] = day_course_info
+        print("---------")
+        print("Confirmation of registered courses : ")
+        for day in registered_courses_info:
+            print(DAY_OF_WEEK_REF_ENG[day])
+            for lesson in registered_courses_info[day]:
+                course_info = registered_courses_info[day][lesson]
+                print(f"Lesson {lesson} : {course_info['course_name']}, {course_info['course_credit']}, {course_info['course_catagory']}")
+        print("---------")
+        confirmation = str(input("Confirm registered courses? (y/N) : "))
+        if confirmation not in ["y", "Y"]:
+            print("Course registration cancelled")
+            return None
+        sem_name = str(input("Input semester name : "))
+        while sem_name == "":
+            print("Please input a valid semester name")
+            sem_name = str(input("Input semester name : "))
         is_confirmed = False
         while not is_confirmed:
-            new_folder_dir = str(input("Input a directory for your new assignment folder : ")).strip()
-            if Path(new_folder_dir).is_dir():
-                print(f"Confirmarion : {new_folder_dir}")
-                confirmation = str(input("Please confirm the directory of your new assignment folder (Y/n) : "))
+            new_sem_dir = str(input("Input a directory for the semester : ")).strip()
+            if Path(new_sem_dir).is_dir():
+                print(f"Confirmarion : {new_sem_dir}")
+                confirmation = str(input("Please confirm the directory for your new semester (Y/n) : "))
                 is_confirmed = False if confirmation in ["n", "N"] else True
             else:
                 print("The designated is a file path instread of a directory. File paths cannot be used as directories")
-                confirmation = str(input("Please confirm if you want to set the parent directory of your designated file path as your assignment directory (y/N) : "))
+                confirmation = str(input("Please confirm if you want to set the parent directory of your designated file path for your new semester (y/N) : "))
                 if confirmation in ["y", "Y"]:
                     is_confirmed = True
-                    new_folder_dir = str(Path(new_folder_dir).resolve().parent)
+                    new_sem_dir = str(Path(new_sem_dir).resolve().parent)
                 else:
                     is_confirmed = False
+        if not Path(new_sem_dir).exists:
+            shutil.makedirs(new_sem_dir, exist_ok=True)
+
+        print("Building assignment directory ...")
+        shutil.mkdir(Path(new_sem_dir) / sem_name)
+        for day in registered_courses_info:
+            day_folder_name = DAY_OF_WEEK_REF[day]
+            day_folder_dir = Path(new_sem_dir) / sem_name / day_folder_name
+            day_folder_dir.mkdir(parents=True, exist_ok=True)
+            for lesson in registered_courses_info[day]:
+                course_name = registered_courses_info[day][lesson]["course_name"]
+                if course_name != None:
+                    course_folder_name = f"{lesson}限：{course_name}"
+                    course_folder_dir = day_folder_dir / course_folder_name 
+                    course_folder_dir.mkdir(parents=True, exist_ok=True)
+        print("Successfully registered courses and built assignment directory")
+        return [str(Path(new_sem_dir) / sem_name), registered_courses_info]
+
+    def initialization_mode(self, config_conversation=False, init_with_reg=False):
+        if init_with_reg:
+            course_info = self.register_course()
+            if not course_info:
+                return
+            new_folder_dir = course_info[0]
+            register_course_info = course_info[1]
+        else:
+            print("Create new assignment capsule here")
+            is_confirmed = False
+            while not is_confirmed:
+                new_folder_dir = str(input("Input a directory for your new assignment folder : ")).strip()
+                if Path(new_folder_dir).is_dir():
+                    print(f"Confirmarion : {new_folder_dir}")
+                    confirmation = str(input("Please confirm the directory of your new assignment folder (Y/n) : "))
+                    is_confirmed = False if confirmation in ["n", "N"] else True
+                else:
+                    print("The designated is a file path instread of a directory. File paths cannot be used as directories")
+                    confirmation = str(input("Please confirm if you want to set the parent directory of your designated file path as your assignment directory (y/N) : "))
+                    if confirmation in ["y", "Y"]:
+                        is_confirmed = True
+                        new_folder_dir = str(Path(new_folder_dir).resolve().parent)
+                    else:
+                        is_confirmed = False
+            if not Path(new_folder_dir).exists:
+                shutil.makedirs(new_folder_dir, exist_ok=True)
             
         capsule_name = str(input("Input your new capsule name : "))
 
         meta_data_raw = {
             "assi_folder_dir" : new_folder_dir,
             "capsule_name" : capsule_name,
-            "config": CONFIG
+            "config": CONFIG,
+            "registered_courses" : register_course_info if init_with_reg else None
         }
 
         if config_conversation:
@@ -679,17 +851,19 @@ class MyAssignment:
     def help(self):
         info = ("""
                 1 : continuing
-                1r : renaming
+                1n : renaming
                 1v : versioning
                 1o : opening
                 1c : recovering
                 1l : opening latest
                 1p : copy and move
+                1r : registering courses
                 2 : creating new versioning collection
                 2q : query versioning info
                 2c : clear versioning data
                 3 : creating new capsule
-                3i : inisSialisation with conversation
+                3i : initialization with conversation
+                3r : initialization with registrastion
                 4 : settings
                 """)
         print(info)
@@ -712,7 +886,7 @@ def main():
         pass
     elif "1" in mode:
         ma.continuation_mode(
-            is_renaming="r" in mode, 
+            is_renaming="n" in mode, 
             versioning="v" in mode, 
             is_open="o" in mode, 
             recover_version="c" in mode, 
@@ -726,7 +900,8 @@ def main():
             )
     elif "3" in mode:
         ma.initialization_mode(
-            config_conversation="i" in mode
+            config_conversation="i" in mode,
+            init_with_reg="r" in mode
         )
     elif "4" in mode:
         ma.settings_mode()
