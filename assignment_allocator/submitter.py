@@ -10,8 +10,11 @@ import platform
 import re
 import subprocess
 import shutil
+import sys
+import tty
+import termios
+
 from pathlib import Path
-import curses
 
 
 # ── 定数 ──────────────────────────────────────────────────
@@ -74,103 +77,106 @@ _MODE_OPTIONS = [
 
 # ── UI ヘルパー ────────────────────────────────────────────
 
+def _read_key() -> bytes:
+    """1キー分のバイト列を raw モードで読み取る（エスケープシーケンス含む）。"""
+    ch = sys.stdin.buffer.read(1)
+    if ch == b"\x1b":
+        nxt = sys.stdin.buffer.read(1)
+        if nxt == b"[":
+            nxt2 = sys.stdin.buffer.read(1)
+            return b"\x1b[" + nxt2
+        return b"\x1b" + nxt
+    return ch
+
+
 def ui_select(question: str, options: list[str], extra_options: list[str] | None = None) -> str | None:
     """
-    curses でターミナルインライン選択 + 直接文字入力の両対応。
+    同一ターミナル上で矢印キー選択 + 直接文字入力の両対応。
     - 矢印キーでカーソル移動 → Enter で確定
     - 文字を入力すると typed に蓄積 → Enter で入力文字列をそのまま返す
     - Backspace で1文字削除
     - Ctrl-C でキャンセル（None を返す）
     """
     all_options = options + (extra_options or [])
-    state = {"idx": 0, "cancelled": False, "typed": ""}
+    idx = 0
+    typed = ""
 
-    def _draw(stdscr):
-        curses.curs_set(0)
-        curses.start_color()
-        curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)   # 選択中
-        curses.init_pair(2, curses.COLOR_YELLOW, curses.COLOR_BLACK)  # 入力中
+    def render() -> int:
+        lines = []
+        lines.append(f"\033[1m{question}\033[0m")
+        if typed:
+            lines.append(f"  \033[33minput: {typed}\033[0m")
+        for i, opt in enumerate(all_options):
+            if i == idx and not typed:
+                lines.append(f"  \033[36m> {opt}\033[0m")
+            else:
+                lines.append(f"    {opt}")
+        sys.stdout.write("\r\n".join(lines) + "\r\n")
+        sys.stdout.flush()
+        return len(lines)
 
+    def clear(n: int) -> None:
+        sys.stdout.write(f"\033[{n}A\033[J")
+        sys.stdout.flush()
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    line_count = render()
+    result = None
+    cancelled = False
+
+    try:
+        tty.setraw(fd)
         while True:
-            stdscr.erase()
-            row = 0
-            for line in question.splitlines():
-                stdscr.addstr(row, 0, line, curses.A_BOLD)
-                row += 1
-
-            if state["typed"]:
-                stdscr.addstr(row, 0, f"  input: {state['typed']}", curses.color_pair(2))
-                row += 1
-
-            for i, opt in enumerate(all_options):
-                if i == state["idx"] and not state["typed"]:
-                    stdscr.addstr(row, 0, f"  > {opt}", curses.color_pair(1))
-                else:
-                    stdscr.addstr(row, 0, f"    {opt}")
-                row += 1
-
-            stdscr.refresh()
-            key = stdscr.get_wch()
-
-            if key == curses.KEY_UP:
-                state["typed"] = ""
-                state["idx"] = (state["idx"] - 1) % len(all_options)
-            elif key == curses.KEY_DOWN:
-                state["typed"] = ""
-                state["idx"] = (state["idx"] + 1) % len(all_options)
-            elif key in (curses.KEY_BACKSPACE, "\x7f", "\b"):
-                state["typed"] = state["typed"][:-1]
-            elif key in ("\n", "\r", curses.KEY_ENTER):
+            ch = _read_key()
+            if ch == b"\x03":               # Ctrl-C
+                cancelled = True
                 break
-            elif key == "\x03":  # Ctrl-C
-                state["cancelled"] = True
+            elif ch == b"\x1b[A":           # 上矢印
+                typed = ""
+                idx = (idx - 1) % len(all_options)
+            elif ch == b"\x1b[B":           # 下矢印
+                typed = ""
+                idx = (idx + 1) % len(all_options)
+            elif ch in (b"\r", b"\n"):      # Enter
                 break
-            elif isinstance(key, str) and len(key) == 1 and key.isprintable():
-                state["typed"] += key
+            elif ch in (b"\x7f", b"\x08"): # Backspace
+                typed = typed[:-1]
+            else:
+                try:
+                    typed += ch.decode("utf-8")
+                except UnicodeDecodeError:
+                    pass
+            clear(line_count)
+            line_count = render()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
-    curses.wrapper(_draw)
-
-    if state["cancelled"]:
+    clear(line_count)
+    if cancelled:
         return None
-    if state["typed"]:
-        print(f"  > {state['typed']}")
-        return state["typed"]
-    chosen = all_options[state["idx"]]
-    print(f"  > {chosen}")
-    return chosen
+    if typed:
+        print(f"  > {typed}")
+        return typed
+    result = all_options[idx]
+    print(f"  > {result}")
+    return result
 
 
 def ui_input(question: str, default: str = "") -> str | None:
-    """curses でテキスト入力。Ctrl-C で None を返す。"""
-    state = {"text": list(default), "cancelled": False}
-
-    def _draw(stdscr):
-        curses.curs_set(1)
-        while True:
-            stdscr.erase()
-            text_str = "".join(state["text"])
-            stdscr.addstr(0, 0, f"{question} {text_str}")
-            stdscr.move(0, len(question) + 1 + len(text_str))
-            stdscr.refresh()
-            key = stdscr.get_wch()
-
-            if key in ("\n", "\r", curses.KEY_ENTER):
-                break
-            elif key == "\x03":  # Ctrl-C
-                state["cancelled"] = True
-                break
-            elif key in (curses.KEY_BACKSPACE, "\x7f", "\b"):
-                if state["text"]:
-                    state["text"].pop()
-            elif isinstance(key, str) and len(key) == 1 and key.isprintable():
-                state["text"].append(key)
-
-    curses.wrapper(_draw)
-
-    if state["cancelled"]:
+    """
+    同一ターミナル上でテキスト入力。
+    ddによるペーストも正しく受け取る。Ctrl-C で None を返す。
+    """
+    sys.stdout.write(f"{question} {default}")
+    sys.stdout.flush()
+    try:
+        line = sys.stdin.readline()
+    except KeyboardInterrupt:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
         return None
-    result = "".join(state["text"])
-    print(f"{question} {result}")
+    result = (default + line).rstrip("\n").rstrip("\r") if default else line.rstrip("\n").rstrip("\r")
     return result
 
 
@@ -203,7 +209,6 @@ class MyAssignment:
     # ── 内部ユーティリティ ─────────────────────────────────
 
     def _save_meta(self) -> None:
-        """メタデータを JSON ファイルへ書き込む。"""
         with open(self.meta_data_path, "w", encoding="utf-8") as f:
             json.dump(self.meta_data_json, f, ensure_ascii=False, indent=3)
 
@@ -213,7 +218,6 @@ class MyAssignment:
         return root / f"{capsule_real_name}_versioning"
 
     def _load_versioning_meta(self, capsule_name: str) -> dict | None:
-        """バージョニングメタデータを読み込む。存在しなければ None を返す。"""
         path = self._versioning_dir(capsule_name) / "versioning_meta_data.json"
         if not path.exists():
             return None
@@ -234,7 +238,9 @@ class MyAssignment:
         if len(capsule_list) == 1:
             return capsule_list[0]
         chosen = ui_select("Select a capsule:", capsule_list)
-        return chosen if chosen else "default"
+        if not chosen or chosen not in self.meta_data_json:
+            return "default"
+        return chosen
 
     # ── フォルダ掘り下げ ───────────────────────────────────
 
@@ -508,7 +514,7 @@ class MyAssignment:
         self._save_meta()
         print("Successfully registered course")
 
-    # ── continuation モード（+ サブ操作） ─────────────────
+    # ── continuation モード ────────────────────────────────
 
     def continuation_mode(
         self,
@@ -531,7 +537,7 @@ class MyAssignment:
             if not used_capsule_name:
                 return
         else:
-            used_capsule_name = "default"  # open_latest では参照しないが定義は必要
+            used_capsule_name = "default"
 
         if is_open:
             self._open_file(meta, used_capsule_name)
