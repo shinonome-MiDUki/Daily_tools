@@ -634,10 +634,10 @@ class MyAssignment:
                 else:
                     is_confirmed = False
         if not Path(new_sem_dir).exists:
-            shutil.makedirs(new_sem_dir, exist_ok=True)
+            os.makedirs(new_sem_dir, exist_ok=True)
 
         print("Building assignment directory ...")
-        shutil.mkdir(Path(new_sem_dir) / sem_name)
+        os.mkdir(Path(new_sem_dir) / sem_name)
         for day in registered_courses_info:
             day_folder_name = DAY_OF_WEEK_REF[day]
             day_folder_dir = Path(new_sem_dir) / sem_name / day_folder_name
@@ -676,7 +676,7 @@ class MyAssignment:
                     else:
                         is_confirmed = False
             if not Path(new_folder_dir).exists:
-                shutil.makedirs(new_folder_dir, exist_ok=True)
+                os.makedirs(new_folder_dir, exist_ok=True)
             
         capsule_name = str(input("Input your new capsule name : "))
 
