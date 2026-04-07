@@ -8,60 +8,134 @@ import datetime
 import subprocess
 import platform
 
-from prompt_toolkit.shortcuts import (
-    radiolist_dialog,
-    input_dialog,
-    message_dialog,
-    yes_no_dialog,
-)
-from prompt_toolkit.styles import Style
+from prompt_toolkit import prompt
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.application import Application
+from prompt_toolkit.layout import Layout
+from prompt_toolkit.layout.containers import Window
+from prompt_toolkit.layout.controls import FormattedTextControl
 
-DIALOG_STYLE = Style.from_dict({
-    "dialog":             "bg:#1e1e2e",
-    "dialog frame.label": "bg:#89b4fa fg:#1e1e2e",
-    "dialog.body":        "bg:#313244 fg:#cdd6f4",
-    "button":             "bg:#45475a fg:#cdd6f4",
-    "button.focused":     "bg:#89b4fa fg:#1e1e2e",
-    "radio-checked":      "fg:#a6e3a1",
-    "radio":              "fg:#cdd6f4",
-})
+# ── UI ヘルパー ────────────────────────────────────────────
 
-def ui_radio(title, text, values):
-    """radiolist_dialog ラッパー。キャンセル時は None を返す。"""
-    return radiolist_dialog(
-        title=title,
-        text=text,
-        values=values,
-        style=DIALOG_STYLE,
-    ).run()
+def help(self):
+    info = ("""
+            1 : continuing
+            1n : renaming
+            1v : versioning
+            1o : opening
+            1c : recovering
+            1l : opening latest
+            1p : copy and move
+            1r : registering courses
+            2 : creating new versioning collection
+            2q : query versioning info
+            2c : clear versioning data
+            3 : creating new capsule
+            3i : initialization with conversation
+            3r : initialization with registrastion
+            4 : settings
+            """)
+    print(info)
 
-def ui_input(title, text, default="", password=False):
-    """input_dialog ラッパー。キャンセル時は None を返す。"""
-    return input_dialog(
-        title=title,
-        text=text,
-        default=default,
-        password=password,
-        style=DIALOG_STYLE,
-    ).run()
 
-def ui_message(title, text):
-    """message_dialog ラッパー。"""
-    message_dialog(
-        title=title,
-        text=text,
-        style=DIALOG_STYLE,
-    ).run()
+def ui_select(question: str, options: list[str], extra_options: list[str] | None = None) -> str | None:
+    """
+    ターミナルインラインで矢印キー選択 + 直接文字入力の両対応。
+    - 矢印キーでカーソル移動 → Enter で確定
+    - 文字を入力すると typed_input に蓄積 → Enter で入力文字列をそのまま返す
+    - Backspace で1文字削除
+    - Ctrl-C でキャンセル（None を返す）
+    """
+    all_options = options + (extra_options or [])
+    state = {"idx": 0, "cancelled": False, "typed": ""}
 
-def ui_confirm(title, text):
-    """yes_no_dialog ラッパー。True/False を返す。"""
-    return yes_no_dialog(
-        title=title,
-        text=text,
-        style=DIALOG_STYLE,
-    ).run()
+    def get_tokens():
+        tokens = []
+        tokens.append(("bold", question + "\n"))
+        if state["typed"]:
+            tokens.append(("ansiyellow", f"  input: {state['typed']}\n"))
+        for i, opt in enumerate(all_options):
+            if i == state["idx"] and not state["typed"]:
+                tokens.append(("ansicyan", f"  ❯ {opt}\n"))
+            else:
+                tokens.append(("", f"    {opt}\n"))
+        return tokens
 
-# ─────────────────────────────────────────────
+    kb = KeyBindings()
+
+    @kb.add("up")
+    def _up(event):
+        state["typed"] = ""
+        state["idx"] = (state["idx"] - 1) % len(all_options)
+
+    @kb.add("down")
+    def _down(event):
+        state["typed"] = ""
+        state["idx"] = (state["idx"] + 1) % len(all_options)
+
+    @kb.add("backspace")
+    def _backspace(event):
+        state["typed"] = state["typed"][:-1]
+
+    @kb.add("enter")
+    def _enter(event):
+        event.app.exit()
+
+    @kb.add("c-c")
+    def _cancel(event):
+        state["cancelled"] = True
+        event.app.exit()
+
+    # 印字可能文字はすべて typed に蓄積
+    @kb.add("<any>")
+    def _any(event):
+        ch = event.key_sequence[0].key
+        if len(ch) == 1 and ch.isprintable():
+            state["typed"] += ch
+
+    app = Application(
+        layout=Layout(Window(content=FormattedTextControl(get_tokens, focusable=True))),
+        key_bindings=kb,
+        full_screen=False,
+        mouse_support=False,
+    )
+    app.run()
+
+    if state["cancelled"]:
+        return None
+    if state["typed"]:
+        print(f"  ❯ {state['typed']}")
+        return state["typed"]
+    chosen = all_options[state["idx"]]
+    print(f"  ❯ {chosen}")
+    return chosen
+
+
+def ui_input(question: str, default: str = "") -> str | None:
+    """
+    prompt_toolkit の prompt() でテキスト入力。
+    Ctrl-C で None を返す。
+    """
+    try:
+        result = prompt(f"{question} ", default=default)
+        return result
+    except KeyboardInterrupt:
+        return None
+
+
+def ui_confirm(question: str) -> bool:
+    """
+    y/N をインラインで確認。デフォルトは No。
+    """
+    try:
+        ans = prompt(f"{question} (y/N): ")
+        return ans.strip().lower() == "y"
+    except KeyboardInterrupt:
+        return False
+
+
+# ── 定数 ──────────────────────────────────────────────────
+
 print("Welcome to MyAssignment")
 print(" ")
 
@@ -94,7 +168,8 @@ class MyAssignment:
             with open(self.meta_data_path, "r", encoding="utf-8") as f:
                 self.meta_data_json = json.load(f)
         except:
-            ui_message("Error", "No valid assignment folder is set\nPlease set a valid folder before using")
+            print("No valid assignment folder is set")
+            print("Please set a valid folder before using")
             return
         if "show_course_today" in self.meta_data_json["app_config"]:
             if self.meta_data_json["app_config"]["show_course_today"] == True:
@@ -106,9 +181,8 @@ class MyAssignment:
         capsule_list = [k for k in self.meta_data_json if k != "app_config"]
         if len(capsule_list) == 1:
             return capsule_list[0]
-        values = [(name, name) for name in capsule_list]
-        result = ui_radio("Capsule Selection", "Select a capsule:", values)
-        return result if result else "default"
+        chosen = ui_select("Select a capsule:", capsule_list)
+        return chosen if chosen else "default"
 
     def diving(self, searching_folder_dir_input, is_search_for_file=False):
         searching_folder_dir = Path(searching_folder_dir_input)
@@ -117,32 +191,27 @@ class MyAssignment:
         else:
             target_names = [f.name for f in searching_folder_dir.iterdir()]
 
-        ADD_NEW = "__ADD_NEW__"
-        TERMINATE = "__TERMINATE__"
-        values = [(name, name) for name in target_names]
-        values.append((ADD_NEW, "Add new folder"))
-        values.append((TERMINATE, "[t] Stay here / terminate diving"))
-
-        target_selected = ui_radio(
-            "Folder Selection",
+        extra = ["Add new folder", "[t] Stay here / terminate diving"]
+        chosen = ui_select(
             f"Current: {searching_folder_dir}\nSelect a folder:",
-            values,
+            target_names,
+            extra_options=extra
         )
 
-        if target_selected is None or target_selected == TERMINATE:
+        if chosen is None or chosen == extra[1]:
             return searching_folder_dir
 
-        if target_selected == ADD_NEW:
-            target_name_to_add = ui_input("New Folder", "Input the folder name to add:")
+        if chosen == extra[0]:
+            target_name_to_add = ui_input("Input the folder name to add:")
             if not target_name_to_add:
                 return searching_folder_dir
-            # "_" shortcut: "folderName_subName"
             if "_" in target_name_to_add:
-                parts = target_name_to_add.split("_", 1)
-                # find parent folder by name
-                matches = [n for n in target_names if n == parts[0]]
+                target_selected_break = target_name_to_add.split("_")
+                parent_name = target_selected_break[0]
+                child_name = target_selected_break[-1]
+                matches = [n for n in target_names if n == parent_name]
                 if matches:
-                    new_dir = searching_folder_dir / matches[0] / parts[1]
+                    new_dir = searching_folder_dir / matches[0] / child_name
                 else:
                     new_dir = searching_folder_dir / target_name_to_add
             else:
@@ -150,25 +219,22 @@ class MyAssignment:
             new_dir.mkdir(parents=True, exist_ok=True)
             return new_dir
 
-        return searching_folder_dir / target_selected
+        return searching_folder_dir / chosen
 
     def show_course_today(self):
         today_day_of_week = str(datetime.datetime.today().isoweekday())
         defult_capsule_info = self.meta_data_json["default"]
-        lines = []
         if "registered_courses" in defult_capsule_info and defult_capsule_info["registered_courses"] != None:
             registered_courses = defult_capsule_info["registered_courses"]
             if today_day_of_week in registered_courses:
                 today_courses = registered_courses[today_day_of_week]
-                lines.append("Today's courses:")
+                print("Today's courses : ")
                 for lesson in today_courses:
                     course_info = today_courses[lesson]
                     if course_info["course_name"] != None:
-                        lines.append(f"Lesson {lesson} : {course_info['course_name']}")
+                        print(f"Lesson {lesson} : {course_info['course_name']}")
             else:
-                lines.append("No course registered for today")
-        if lines:
-            ui_message("Today's Schedule", "\n".join(lines))
+                print("No course registered for today")
         print(" ")
 
     def set_versioning_mode(self, capsule_name=None, is_query=False, is_clear=False):
@@ -198,15 +264,14 @@ class MyAssignment:
 
             target_file_names = [f.name for f in Path(searching_folder_dir).iterdir()]
             if not target_file_names:
-                ui_message("Error", "No files found in the selected folder.")
+                print("No files found in the selected folder.")
                 return
-            values = [(name, name) for name in target_file_names]
-            target_selected_name = ui_radio("File Selection", "Select a file:", values)
+            target_selected_name = ui_select("Select a file:", target_file_names)
             if not target_selected_name:
                 return
             target_selected_path = Path(searching_folder_dir) / target_selected_name
 
-            comment = ui_input("Comments", "Input comments (leave blank for none):")
+            comment = ui_input("Input comments (leave blank for none):")
             comment = None if (comment is None or comment.strip() == "") else comment.strip()
 
             versioning_meta_data_json_path = versioning_dir / "versioning_meta_data.json"
@@ -216,13 +281,10 @@ class MyAssignment:
             else:
                 versioning_meta_data_json = {}
 
-            versioning_collection_alias = ui_input(
-                "Collection Name",
-                "Name this versioning collection:",
-                default=f"{target_capsule_real_name}_{datetime.datetime.now()}"
-            )
+            default_alias = f"{target_capsule_real_name}_{datetime.datetime.now()}"
+            versioning_collection_alias = ui_input("Name this versioning collection:", default=default_alias)
             if not versioning_collection_alias or versioning_collection_alias.strip() == "":
-                versioning_collection_alias = f"{target_capsule_real_name}_{datetime.datetime.now()}"
+                versioning_collection_alias = default_alias
             else:
                 versioning_collection_alias = versioning_collection_alias.strip()
 
@@ -237,7 +299,7 @@ class MyAssignment:
             }
             with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
                 json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
-            ui_message("Success", f"Successfully set up versioning collection:\n{versioning_collection_alias}")
+            print(f"Successfully set up versioning collection : {versioning_collection_alias}")
 
         def clear_collection():
             target_capsule_name = self.ask_capsule_name()
@@ -251,22 +313,18 @@ class MyAssignment:
                 with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
                     versioning_meta_data_json = json.load(f)
             else:
-                ui_message("Error", "No versioning collection exists")
+                print("No versioning collection exists")
                 return
 
             versioning_collections = list(versioning_meta_data_json.keys())
-            values = [(name, name) for name in versioning_collections]
-            selected = ui_radio("Clear Collection", "Select a versioning collection:", values)
+            selected = ui_select("Select a versioning collection:", versioning_collections)
             if not selected:
                 return
             selected_versioning_collection = selected
 
-            confirmed = ui_confirm(
-                "Confirm Clear",
-                f"Clearing versioning collection:\n{selected_versioning_collection}\n\nAre you sure?"
-            )
+            confirmed = ui_confirm(f"Clearing versioning collection {selected_versioning_collection}. Confirm?")
             if not confirmed:
-                ui_message("Cancelled", "Clearing action cancelled")
+                print("Clearing action cancelled")
                 return
 
             active_path = Path(versioning_meta_data_json[selected_versioning_collection]["active_path"])
@@ -279,10 +337,10 @@ class MyAssignment:
             del versioning_meta_data_json[selected_versioning_collection]
             with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
                 json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
-            ui_message("Success", f"Successfully cleared versioning collection:\n{selected_versioning_collection}")
+            print(f"Successfully cleared versioning collection : {selected_versioning_collection}")
 
         def query_version():
-            searching_words_raw = ui_input("Search Versioning", "Search (keyword_option1_option2 ...):")
+            searching_words_raw = ui_input("Search (keyword_option1_option2 ...):")
             if searching_words_raw is None:
                 return
             searching_words = searching_words_raw.strip().split("_")
@@ -302,39 +360,35 @@ class MyAssignment:
                 with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
                     versioning_meta_data_json = json.load(f)
                 if versioning_meta_data_json == {}:
-                    ui_message("Result", "No versioning data found")
+                    print("No versioning data found")
                     return
 
-                result_lines = []
                 is_have_something_matched_kw = False
                 for versioning_collection in versioning_meta_data_json:
                     if keyword != "" and keyword.lower() not in str(versioning_collection).lower():
                         continue
                     is_have_something_matched_kw = True
-                    result_lines.append(f"{versioning_collection} :")
+                    print(f"{versioning_collection} : ")
                     collection_data = versioning_meta_data_json[versioning_collection]
                     for version in versioning_meta_data_json[versioning_collection]:
                         if version == "active_path":
-                            result_lines.append(f"Active path : {collection_data['active_path']}")
+                            print(f"Active path : {collection_data['active_path']}")
                         else:
-                            result_lines.append(f"Version {version} :")
+                            print(f"Version {version} : ")
                             version_data = collection_data[version]
                             for data_item in version_data:
                                 if search_options:
                                     for search_option in search_options:
                                         if search_option.lower() in str(data_item).lower():
-                                            result_lines.append(f"   {data_item} : {version_data[data_item]}")
+                                            print(f"   {data_item} : {version_data[data_item]}")
                                             break
                                 else:
-                                    result_lines.append(f"   {data_item} : {version_data[data_item]}")
-                    result_lines.append("-----")
-
+                                    print(f"   {data_item} : {version_data[data_item]}")
+                    print("-----")
                 if not is_have_something_matched_kw:
-                    ui_message("Result", "No matching versioning collection")
-                else:
-                    ui_message("Query Results", "\n".join(result_lines))
+                    print("No matching versioning collection")
             else:
-                ui_message("Error", "No versioning data found")
+                print("No versioning data found")
 
         if is_query:
             query_version()
@@ -349,36 +403,31 @@ class MyAssignment:
             return
         meta_data_json = self.meta_data_json
         if "registered_courses" not in meta_data_json[registering_capsule_name] or meta_data_json[registering_capsule_name]["registered_courses"] is None:
-            ui_message("Info", "No registered courses found for this capsule\nRedirecting to course registration ...")
+            print("No registered courses found for this capsule")
+            print("Redirecting to course registration ...")
             self.register_course()
             return
         course_meta_data = meta_data_json[registering_capsule_name]["registered_courses"]
 
         while True:
-            lesson_to_register = ui_input(
-                "Register Lesson",
-                "Input the lesson you want to register\n(e.g. 2-3 for Tuesday's 3rd lesson):"
-            )
+            lesson_to_register = ui_input("Input the lesson you want to register (e.g. 2-3 for Tuesday's 3rd lesson):")
             if lesson_to_register is None:
                 return
             lesson_to_register = lesson_to_register.strip()
             if re.match(r"\d+-\d+", lesson_to_register):
                 break
-            ui_message("Invalid", "Invalid input. Please use format: day-period (e.g. 2-3)")
+            print("Invalid input")
 
         day_to_register = lesson_to_register.split("-")[0]
         period_to_register = lesson_to_register.split("-")[1]
         if day_to_register not in course_meta_data:
-            ui_message("Error", "Invalid day of week")
+            print("Invalid day of week")
             return
         if period_to_register not in course_meta_data[day_to_register]:
-            ui_message("Error", "Invalid lesson period")
+            print("Invalid lesson period")
             return
 
-        course_info = ui_input(
-            "Course Information",
-            'Input course info:\n"course name, course credit, course category"'
-        )
+        course_info = ui_input('Input course information in the format of "course name, course credit, course category"\n→')
         if course_info is None:
             return
         course_info_split = course_info.split(",")
@@ -392,14 +441,11 @@ class MyAssignment:
 
         original_course_info = course_meta_data[day_to_register][period_to_register]
         if original_course_info["course_name"] is not None:
-            confirmed = ui_confirm(
-                "Warning: Overwrite?",
-                f"There is already a registered course:\n"
-                f"{original_course_info['course_name']}, {original_course_info['course_credit']}, {original_course_info['course_catagory']}\n\n"
-                "Do you want to overwrite?"
-            )
-            if not confirmed:
-                ui_message("Cancelled", "Course registration cancelled")
+            print("Warning : There is already a registered course for the designated lesson : "
+                  f"\n{original_course_info['course_name']}, {original_course_info['course_credit']}, {original_course_info['course_catagory']}")
+            confirmation = ui_confirm("Do you want to overwrite the existing course information?")
+            if not confirmation:
+                print("Course registration cancelled")
                 return
             os.rename(
                 Path(meta_data_json[registering_capsule_name]["assi_folder_dir"]) / DAY_OF_WEEK_REF[day_to_register] / f"{period_to_register}限：{original_course_info['course_name']}",
@@ -421,7 +467,7 @@ class MyAssignment:
         }
         with open(self.meta_data_path, "w", encoding="utf-8") as f:
             json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
-        ui_message("Success", "Successfully registered course")
+        print("Successfully registered course")
 
     def continuation_mode(
             self,
@@ -435,7 +481,8 @@ class MyAssignment:
     ):
         meta_data_json = self.meta_data_json
         if len(meta_data_json) == 1:
-            ui_message("Error", "No default assignment folder is set\nPlease set default folder before using")
+            print("No default assignment folder is set")
+            print("Please set default folder before using")
             return
 
         if not open_latest:
@@ -454,15 +501,16 @@ class MyAssignment:
                 if meta_data_json[used_capsule_name]["config"]["include_weekends"] == True:
                     allowed_day_of_week.append("6")
                     allowed_day_of_week.append("7")
-                day_values = [
-                    (d, f"{DAY_OF_WEEK_REF_ENG[d]} ({DAY_OF_WEEK_REF[d]})")
+                day_options = [
+                    f"{d} : {DAY_OF_WEEK_REF_ENG[d]} ({DAY_OF_WEEK_REF[d]})"
                     for d in allowed_day_of_week
                 ]
-                day_of_week = ui_radio("Day of Week", "Day of week of the lesson:", day_values)
-                if not day_of_week:
+                chosen_day_str = ui_select("Day of week of the lesson:", day_options)
+                if not chosen_day_str:
                     return
-                day_of_week_label = DAY_OF_WEEK_REF[day_of_week]
-                searching_folder_dir = capsule_root_folder_dir / day_of_week_label
+                day_of_week = chosen_day_str.split(" : ")[0]
+                day_of_week = DAY_OF_WEEK_REF[day_of_week]
+                searching_folder_dir = capsule_root_folder_dir / day_of_week
                 if not searching_folder_dir.exists():
                     searching_folder_dir.mkdir(parents=True, exist_ok=True)
             else:
@@ -488,19 +536,19 @@ class MyAssignment:
             destination = target_folder_dir / file_name
 
             if destination.exists():
-                conflict_values = [
-                    ("0", "Auto-resolve (default)"),
-                    ("1", "Stop moving"),
-                    ("2", "Rename it"),
-                    ("3", "Do a versioning"),
-                    ("4", "Overwrite the existing one"),
+                print(destination)
+                print("This file name already exists.")
+                conflict_options = [
+                    "0 : Auto-resolve (default)",
+                    "1 : Stop moving",
+                    "2 : Rename it",
+                    "3 : Do a versioning",
+                    "4 : Overwrite the existing one",
                 ]
-                reaction_str = ui_radio(
-                    "File Conflict",
-                    f"File already exists:\n{destination}\n\nHow do you want to handle it?",
-                    conflict_values,
-                )
-                reaction = int(reaction_str) if reaction_str in [str(i) for i in range(0, 5)] else 0
+                reaction_str = ui_select("How do you want to handle it?", conflict_options)
+                if not reaction_str:
+                    return
+                reaction = int(reaction_str[0])
 
                 if reaction == 0:
                     file_root_name = file.stem
@@ -511,21 +559,22 @@ class MyAssignment:
                         destination = target_folder_dir / file_name
                         indexing += 1
                 elif reaction == 1:
-                    ui_message("Cancelled", "Moving action interrupted")
+                    print("Moving action interrupted")
                     return
                 elif reaction == 2:
-                    new_name = ui_input("Rename", "Rename:")
+                    new_name = ui_input("Rename:")
                     if not new_name or new_name.strip() == "":
-                        ui_message("Cancelled", "Moving action interrupted")
+                        print("Moving action interrupted")
                         return
                     extension = file.suffix
                     file_name = new_name.strip() + extension
                     destination = target_folder_dir / file_name
                     if destination.exists():
-                        ui_message("Error", "This file name also exists\nMoving action interrupted")
+                        print("This file name also exists")
+                        print("Moving action interrupted")
                         return
                 elif reaction == 3:
-                    ui_message("Info", "Please restart and select the versioning mode")
+                    print("Please restart and select the versioning mode")
                     return
                 elif reaction == 4:
                     pass
@@ -537,7 +586,7 @@ class MyAssignment:
             else:
                 shutil.move(file, destination)
             print(f"Moved to {destination}")
-            ui_message("Success", f"Moved to:\n{destination}")
+            print("Successful")
             return str(destination)
 
         def version_file(file_str=None, renamed_name=None, is_recovering=False):
@@ -547,39 +596,41 @@ class MyAssignment:
                 with open(versioning_meta_data_json_path, "r", encoding="utf-8") as f:
                     versioning_meta_data_json = json.load(f)
             else:
-                ui_message("Error", "No versioning collection exists\nPlease create a versioning collection")
+                print("No versioning collection exists")
+                print("Please create a versioning collection")
                 self.set_versioning_mode(capsule_name=used_capsule_name)
                 return
 
             versioning_collections = list(versioning_meta_data_json.keys())
-            NO_DESIRED = "__NO_DESIRED__"
-            values = [(name, name) for name in versioning_collections]
-            values.append((NO_DESIRED, "No desired versioning collection"))
-            selected = ui_radio("Versioning Collection", "Select a versioning collection:", values)
+            selected = ui_select(
+                "Select a versioning collection:",
+                versioning_collections,
+                extra_options=["No desired versioning collection"]
+            )
             if not selected:
                 return
-            if selected == NO_DESIRED:
-                ui_message("Info", "Redirect to set versioning mode")
+            if selected == "No desired versioning collection":
+                print("Redirect to set versioning mode")
                 self.set_versioning_mode(capsule_name=used_capsule_name)
                 return
 
             selected_versioning_collection = selected
             active_path = Path(versioning_meta_data_json[selected_versioning_collection]["active_path"])
 
+            version_to_recover = None
             if is_recovering:
                 version_keys = [
                     k for k in versioning_meta_data_json[selected_versioning_collection]
                     if k != "active_path"
                 ]
-                version_values = [(k, f"Version {k}") for k in version_keys]
-                version_to_recover = ui_radio("Recover Version", "Select a version to recover:", version_values)
+                version_to_recover = ui_select("Select a version to recover:", [str(k) for k in version_keys])
                 if not version_to_recover:
                     return
                 if version_to_recover not in versioning_meta_data_json[selected_versioning_collection]:
-                    ui_message("Error", "The designated version does not exist")
+                    print("The designated version does not exist")
                     return
 
-            comment = ui_input("Comments", "Input comments (leave blank for none):")
+            comment = ui_input("Input comments (leave blank for none):")
             comment = None if (comment is None or comment.strip() == "") else comment.strip()
 
             version_num = len(versioning_meta_data_json[selected_versioning_collection]) - 1
@@ -615,7 +666,7 @@ class MyAssignment:
 
             with open(versioning_meta_data_json_path, "w", encoding="utf-8") as f:
                 json.dump(versioning_meta_data_json, f, ensure_ascii=False, indent=3)
-            ui_message("Success", "File versioned successfully")
+            print("File versioned successfully")
             return str(storing_path)
 
         def opening_file(is_open_previous=False):
@@ -631,17 +682,16 @@ class MyAssignment:
                         break
                     if Path(searching_folder_dir).is_file():
                         break
-                    proceed = ui_confirm("Proceed?", f"Current path:\n{searching_folder_dir}\n\nProceed diving?")
-                    if not proceed:
+                    if not ui_confirm("Proceed?"):
                         break
             else:
                 if "latest_opened" in meta_data_json["app_config"]:
                     searching_folder_dir = Path(meta_data_json["app_config"]["latest_opened"])
                     if not searching_folder_dir.exists():
-                        ui_message("Error", "File not exist")
+                        print("File not exist")
                         return
                 else:
-                    ui_message("Error", "No latest opened file found")
+                    print("No latest opened file found")
                     return
 
             if platform.system() == "Darwin":
@@ -649,7 +699,7 @@ class MyAssignment:
             elif platform.system() == "Windows":
                 subprocess.run(["explorer", "/select", searching_folder_dir])
             else:
-                ui_message("Error", "Only MacOS and Windows are supported currently")
+                print("Only MacOS and Windows are supported currently")
                 return
 
         if is_open:
@@ -661,16 +711,14 @@ class MyAssignment:
         elif register_course:
             self.add_register_course()
         else:
-            your_assi_path = ui_input("Assignment File", "Drag your assignment here (paste the path):")
+            your_assi_path = ui_input("Drag your assignment here (paste the path):")
             if not your_assi_path:
                 return
             your_assi_path = your_assi_path.strip()
             renamed_name = ""
             if is_renaming:
-                renamed_name = ui_input("Rename", "Rename as:")
-                if renamed_name is None:
-                    renamed_name = ""
-                renamed_name = renamed_name.strip()
+                r = ui_input("Rename as:")
+                renamed_name = r.strip() if r else ""
 
             if not versioning:
                 previous_file_path = move_file(your_assi_path, renamed_name)
@@ -683,25 +731,24 @@ class MyAssignment:
 
     def register_course(self):
         while True:
-            lesson_num_str = ui_input("Lessons per Day", "Input number for lessons per day:")
+            lesson_num_str = ui_input("Input number for lessons per day:")
             if lesson_num_str is None:
                 return None
             if lesson_num_str.isdigit() and int(lesson_num_str) >= 2:
                 lesson_num = int(lesson_num_str)
                 break
-            ui_message("Invalid", "Please input a number larger than or equal to 2")
+            print("Please input a number larger than or equal to 2")
 
         registered_courses_info = {}
         print("Please input the course information for the lessons in the format of \"course name, course credit, course category\"")
         print("If there is no course for the lesson, just press enter")
 
         for day in range(1, 6):
+            print("----------")
+            print(DAY_OF_WEEK_REF_ENG[f"{day}"])
             day_course_info = {}
             for lesson in range(1, lesson_num + 1):
-                course_registered = ui_input(
-                    f"{DAY_OF_WEEK_REF_ENG[str(day)]} - Lesson {lesson}",
-                    f'Input course info for {DAY_OF_WEEK_REF_ENG[str(day)]} Lesson {lesson}:\n"course name, course credit, course category"\n(leave blank if no course)'
-                )
+                course_registered = ui_input(f"Lesson {lesson} :")
                 if course_registered is None:
                     course_registered = ""
                 course_info = course_registered.split(",")
@@ -719,38 +766,37 @@ class MyAssignment:
                 }
             registered_courses_info[f"{day}"] = day_course_info
 
-        confirm_lines = ["Confirmation of registered courses:"]
+        print("---------")
+        print("Confirmation of registered courses : ")
         for day in registered_courses_info:
-            confirm_lines.append(DAY_OF_WEEK_REF_ENG[day])
+            print(DAY_OF_WEEK_REF_ENG[day])
             for lesson in registered_courses_info[day]:
-                ci = registered_courses_info[day][lesson]
-                confirm_lines.append(f"Lesson {lesson} : {ci['course_name']}, {ci['course_credit']}, {ci['course_catagory']}")
-        confirmed = ui_confirm("Confirm Courses", "\n".join(confirm_lines) + "\n\nConfirm registered courses?")
-        if not confirmed:
-            ui_message("Cancelled", "Course registration cancelled")
+                course_info = registered_courses_info[day][lesson]
+                print(f"Lesson {lesson} : {course_info['course_name']}, {course_info['course_credit']}, {course_info['course_catagory']}")
+        print("---------")
+        if not ui_confirm("Confirm registered courses?"):
+            print("Course registration cancelled")
             return None
 
         while True:
-            sem_name = ui_input("Semester Name", "Input semester name:")
+            sem_name = ui_input("Input semester name:")
             if sem_name and sem_name.strip():
                 sem_name = sem_name.strip()
                 break
-            ui_message("Invalid", "Please input a valid semester name")
+            print("Please input a valid semester name")
 
         is_confirmed = False
         while not is_confirmed:
-            new_sem_dir = ui_input("Semester Directory", "Input a directory for the semester:")
+            new_sem_dir = ui_input("Input a directory for the semester:")
             if not new_sem_dir:
                 return None
             new_sem_dir = new_sem_dir.strip()
             if Path(new_sem_dir).is_dir():
-                is_confirmed = ui_confirm("Confirm Directory", f"Confirm the directory for your new semester:\n{new_sem_dir}")
+                print(f"Confirmation : {new_sem_dir}")
+                is_confirmed = ui_confirm("Please confirm the directory for your new semester")
             else:
-                use_parent = ui_confirm(
-                    "Not a Directory",
-                    "The designated path is a file, not a directory.\nUse the parent directory instead?"
-                )
-                if use_parent:
+                print("The designated is a file path instead of a directory.")
+                if ui_confirm("Use the parent directory of your designated file path for your new semester?"):
                     is_confirmed = True
                     new_sem_dir = str(Path(new_sem_dir).resolve().parent)
 
@@ -769,8 +815,7 @@ class MyAssignment:
                     course_folder_name = f"{lesson}限：{course_name}"
                     course_folder_dir = day_folder_dir / course_folder_name
                     course_folder_dir.mkdir(parents=True, exist_ok=True)
-
-        ui_message("Success", "Successfully registered courses and built assignment directory")
+        print("Successfully registered courses and built assignment directory")
         return [str(Path(new_sem_dir) / sem_name), registered_courses_info]
 
     def initialization_mode(self, config_conversation=False, init_with_reg=False):
@@ -781,28 +826,26 @@ class MyAssignment:
             new_folder_dir = course_info[0]
             register_course_info = course_info[1]
         else:
-            ui_message("Info", "Create new assignment capsule here")
+            print("Create new assignment capsule here")
             is_confirmed = False
             while not is_confirmed:
-                new_folder_dir = ui_input("Assignment Folder", "Input a directory for your new assignment folder:")
+                new_folder_dir = ui_input("Input a directory for your new assignment folder:")
                 if not new_folder_dir:
                     return
                 new_folder_dir = new_folder_dir.strip()
                 if Path(new_folder_dir).is_dir():
-                    is_confirmed = ui_confirm("Confirm Directory", f"Confirm the directory of your new assignment folder:\n{new_folder_dir}")
+                    print(f"Confirmation : {new_folder_dir}")
+                    is_confirmed = ui_confirm("Please confirm the directory of your new assignment folder")
                 else:
-                    use_parent = ui_confirm(
-                        "Not a Directory",
-                        "The designated path is a file, not a directory.\nUse the parent directory instead?"
-                    )
-                    if use_parent:
+                    print("The designated is a file path instead of a directory.")
+                    if ui_confirm("Use the parent directory of your designated file path as your assignment directory?"):
                         is_confirmed = True
                         new_folder_dir = str(Path(new_folder_dir).resolve().parent)
             if not Path(new_folder_dir).exists:
                 os.makedirs(new_folder_dir, exist_ok=True)
             register_course_info = None
 
-        capsule_name = ui_input("Capsule Name", "Input your new capsule name:")
+        capsule_name = ui_input("Input your new capsule name:")
         if not capsule_name:
             return
         capsule_name = capsule_name.strip()
@@ -815,9 +858,9 @@ class MyAssignment:
         }
 
         if config_conversation:
-            is_use_weekday = ui_confirm("Config", "Use the weekday based allocation system?")
-            is_include_weekends = ui_confirm("Config", "Include weekends in your file system?")
-            dive_layer_str = ui_input("Config", "Designate the number of dive layers:")
+            is_use_weekday = ui_confirm("Use the weekday based allocation system?")
+            is_include_weekends = ui_confirm("Include weekends in your file system?")
+            dive_layer_str = ui_input("Designate the number of dive layers:")
             dive_layer = int(dive_layer_str) if (dive_layer_str and dive_layer_str.isdigit()) else 1
             config_items_list = list(CONFIG.keys())
             meta_data_raw["config"] = {
@@ -831,31 +874,36 @@ class MyAssignment:
             meta_data_json["default"] = meta_data_raw
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data_json, f, ensure_ascii=False)
-            ui_message("Success", f"New capsule created\nCapsule name : {capsule_name}\nFolder : {new_folder_dir}")
+            print("New capsule created")
+            print(f"capsule name : {capsule_name}")
+            print(f"assignment folder directory : {new_folder_dir}")
         else:
             with open(self.meta_data_path, "r", encoding="utf-8") as f:
                 meta_data_current = json.load(f)
             while capsule_name in meta_data_current:
-                ui_message("Error", "Capsule name already exists")
-                capsule_name = ui_input("Capsule Name", "Input your new capsule name:")
+                print("Capsule name already exists")
+                capsule_name = ui_input("Input your new capsule name:")
                 if not capsule_name:
                     return
                 capsule_name = capsule_name.strip()
 
-            make_to_default = ui_confirm("Set Default?", "Make this capsule the default?")
-            if make_to_default:
+            if ui_confirm("Make to default?"):
                 current_default = meta_data_current["default"]
                 new_name_for_current_default = current_default["capsule_name"]
                 meta_data_current[new_name_for_current_default] = current_default
                 meta_data_current["default"] = meta_data_raw
                 with open(self.meta_data_path, "w", encoding="utf-8") as f:
                     json.dump(meta_data_current, f, ensure_ascii=False, indent=3)
-                ui_message("Success", f"New capsule created and set to default\nCapsule name : {capsule_name}\nFolder : {new_folder_dir}")
+                print("New capsule created and Set to default")
+                print(f"capsule name : {capsule_name}")
+                print(f"assignment folder directory : {new_folder_dir}")
             else:
                 meta_data_current[capsule_name] = meta_data_raw
                 with open(self.meta_data_path, "w", encoding="utf-8") as f:
                     json.dump(meta_data_current, f, ensure_ascii=False, indent=3)
-                ui_message("Success", f"New capsule created\nCapsule name : {capsule_name}\nFolder : {new_folder_dir}")
+                print("New capsule created")
+                print(f"capsule name : {capsule_name}")
+                print(f"assignment folder directory : {new_folder_dir}")
 
     def settings_mode(self):
         SETTING_ITEMS = {
@@ -866,25 +914,27 @@ class MyAssignment:
             "5": "update"
         }
         meta_data_json = self.meta_data_json
-        setting_values = [(k, v) for k, v in SETTING_ITEMS.items()]
-        setting_item_selected = ui_radio("Settings", "Choose a setting item:", setting_values)
-        if not setting_item_selected:
+        setting_options = [f"{k} : {v}" for k, v in SETTING_ITEMS.items()]
+        chosen = ui_select("Choose a setting item:", setting_options)
+        if not chosen:
             return
+        setting_item_selected = chosen.split(" : ")[0]
 
         if setting_item_selected in ["1", "2"]:
             if len(meta_data_json) == 1:
-                ui_message("Error", "There is no capsule to set")
+                print("There is no capsule to set")
                 return
 
         if setting_item_selected == "1":
             if len(meta_data_json) == 2:
-                ui_message("Info", "There is only one capsule which is already in default")
+                print("There is only one capsule which is already in default")
                 return
+            print("Choose a capsule to set default")
             setting_capsule_name = self.ask_capsule_name()
             if not setting_capsule_name:
                 return
             if setting_capsule_name == "default":
-                ui_message("Info", "The selected capsule is already in default")
+                print("The selected capsule is already in default")
                 return
             current_default_capsule_real_name = meta_data_json["default"]["capsule_name"]
             meta_data_json[current_default_capsule_real_name] = meta_data_json["default"]
@@ -892,7 +942,7 @@ class MyAssignment:
             del meta_data_json[setting_capsule_name]
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
-            ui_message("Success", f"Successfully set {setting_capsule_name} to default")
+            print(f"Successfully set {setting_capsule_name} to default")
 
         elif setting_item_selected == "2":
             setting_capsule_name = self.ask_capsule_name()
@@ -900,18 +950,16 @@ class MyAssignment:
                 return
             is_confirmed = False
             while not is_confirmed:
-                new_folder_dir = ui_input("New Folder", "Input the new directory for your assignment folder:")
+                new_folder_dir = ui_input("Input the new directory for your assignment folder:")
                 if not new_folder_dir:
                     return
                 new_folder_dir = new_folder_dir.strip()
                 if Path(new_folder_dir).is_dir():
-                    is_confirmed = ui_confirm("Confirm Directory", f"Confirm the new directory:\n{new_folder_dir}")
+                    print(f"Confirmation : {new_folder_dir}")
+                    is_confirmed = ui_confirm("Please confirm the directory of your new assignment folder")
                 else:
-                    use_parent = ui_confirm(
-                        "Not a Directory",
-                        "The designated path is a file, not a directory.\nUse the parent directory instead?"
-                    )
-                    if use_parent:
+                    print("The designated is a file path instead of a directory.")
+                    if ui_confirm("Use the parent directory of your designated file path as your assignment directory?"):
                         is_confirmed = True
                         new_folder_dir = str(Path(new_folder_dir).resolve().parent)
             original_assi_folder_dir = meta_data_json[setting_capsule_name]["assi_folder_dir"]
@@ -920,7 +968,7 @@ class MyAssignment:
             meta_data_json[setting_capsule_name]["assi_folder_dir"] = new_folder_dir
             if origial_versioning_folder_path.exists():
                 shutil.move(origial_versioning_folder_path, Path(new_folder_dir))
-            ui_message("Success", f"Successfully changed to:\n{new_folder_dir}")
+            print(f"Successfully changed to : {new_folder_dir}")
 
         elif setting_item_selected == "3":
             meta_data_json = self.meta_data_json
@@ -931,34 +979,34 @@ class MyAssignment:
 
             is_continue_to_set = True
             while is_continue_to_set:
-                current_settings_lines = ["Current Settings:"]
-                config_values = []
+                print("Current Settings:")
+                config_options = []
                 for idx, config_item in enumerate(config_items):
                     orig = meta_data_json[setting_capsule_name]["config"][config_item]
                     label = f"{config_item} ({CONFIG_CONVENTION[config_item]}) - {orig}"
-                    current_settings_lines.append(f"{idx+1} : {label}")
-                    config_values.append((config_item, label))
+                    print(f"{idx+1} : {label}")
+                    config_options.append(label)
 
-                item_to_set = ui_radio("Edit Configuration", "\n".join(current_settings_lines) + "\n\nSelect item to edit:", config_values)
-                if not item_to_set:
+                chosen_config = ui_select("Select item to edit:", config_options)
+                if not chosen_config:
                     break
+                item_to_set = config_items[config_options.index(chosen_config)]
                 orig_val = meta_data_json[setting_capsule_name]["config"][item_to_set]
+
                 if isinstance(orig_val, bool):
-                    do_switch = ui_confirm("Switch Value", f"Switch {item_to_set}\nfrom {orig_val} → {not orig_val}?")
-                    if do_switch:
+                    if ui_confirm(f"Switch {item_to_set} from {orig_val} to {not orig_val}?"):
                         meta_data_json[setting_capsule_name]["config"][item_to_set] = not orig_val
                 elif isinstance(orig_val, int):
-                    new_val_str = ui_input("Set Value", f"Designate new value for {item_to_set}:", default=str(orig_val))
+                    new_val_str = ui_input(f"Designate new value for {item_to_set}:", default=str(orig_val))
                     new_val = int(new_val_str) if (new_val_str and new_val_str.isdigit()) else orig_val
                     meta_data_json[setting_capsule_name]["config"][item_to_set] = new_val
 
-                is_continue_to_set = ui_confirm("Continue?", "Edit other settings?")
+                is_continue_to_set = ui_confirm("Edit other settings?")
 
-            result_lines = ["Updated Settings:"]
+            print("Current Settings:")
             for config_item in config_items:
                 new_value = meta_data_json[setting_capsule_name]["config"][config_item]
-                result_lines.append(f"{config_item} ({CONFIG_CONVENTION[config_item]}) - {new_value}")
-            ui_message("Settings Saved", "\n".join(result_lines))
+                print(f"{config_item} ({CONFIG_CONVENTION[config_item]}) - {new_value}")
             with open(self.meta_data_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
 
@@ -966,92 +1014,98 @@ class MyAssignment:
             if "app_config" in meta_data_json:
                 bool_items = [k for k in meta_data_json["app_config"] if isinstance(meta_data_json["app_config"][k], bool)]
                 if not bool_items:
-                    ui_message("Info", "No configurable app settings found")
+                    print("No configurable app settings found")
                     return
                 is_continue_to_set = True
                 while is_continue_to_set:
-                    current_lines = ["Current app configurations:"]
-                    values = []
-                    for item in bool_items:
-                        label = f"{item} - {meta_data_json['app_config'][item]}"
-                        current_lines.append(label)
-                        values.append((item, label))
-                    item_to_set = ui_radio("App Config", "\n".join(current_lines) + "\n\nSelect item to toggle:", values)
-                    if not item_to_set:
+                    print("Current app configurations : ")
+                    app_options = [f"{k} - {meta_data_json['app_config'][k]}" for k in bool_items]
+                    for opt in app_options:
+                        print(f"  {opt}")
+                    chosen_app = ui_select("Select item to toggle:", app_options)
+                    if not chosen_app:
                         break
-                    meta_data_json["app_config"][item_to_set] = not meta_data_json["app_config"][item_to_set]
-                    is_continue_to_set = ui_confirm("Continue?", "Edit other app configurations?")
+                    item_key = bool_items[app_options.index(chosen_app)]
+                    meta_data_json["app_config"][item_key] = not meta_data_json["app_config"][item_key]
+                    is_continue_to_set = ui_confirm("Edit other app configurations?")
 
                 with open(self.meta_data_path, "w", encoding="utf-8") as f:
                     json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
-                result_lines = ["Current app configurations:"]
+                print("Current app configurations : ")
                 for k in bool_items:
-                    result_lines.append(f"{k} - {meta_data_json['app_config'][k]}")
-                ui_message("App Config Saved", "\n".join(result_lines))
+                    print(f"{k} - {meta_data_json['app_config'][k]}")
             else:
-                ui_message("Error", "No app configuration found")
+                print("No app configuration found")
                 meta_data_json["app_config"] = {}
 
         elif setting_item_selected == "5":
             try:
                 from updater import update_from_git
             except:
-                ui_message("Error", "Unable to obtain the updater script")
+                print("Unable to obtain the updater script")
                 return
             update_from_git(self.current_dir, self.my_path)
             exit()
 
+        else:
+            print("Invalid")
+
     def help(self):
-        info = (
-            "1  : continuing\n"
-            "1n : renaming\n"
-            "1v : versioning\n"
-            "1o : opening\n"
-            "1c : recovering\n"
-            "1l : opening latest\n"
-            "1p : copy and move\n"
-            "1r : registering courses\n"
-            "2  : creating new versioning collection\n"
-            "2q : query versioning info\n"
-            "2c : clear versioning data\n"
-            "3  : creating new capsule\n"
-            "3i : initialization with conversation\n"
-            "3r : initialization with registration\n"
-            "4  : settings"
-        )
-        ui_message("Help - Mode List", info)
+        info = ("""
+                1 : continuing
+                1n : renaming
+                1v : versioning
+                1o : opening
+                1c : recovering
+                1l : opening latest
+                1p : copy and move
+                1r : registering courses
+                2 : creating new versioning collection
+                2q : query versioning info
+                2c : clear versioning data
+                3 : creating new capsule
+                3i : initialization with conversation
+                3r : initialization with registrastion
+                4 : settings
+                """)
+        print(info)
 
 
 def main():
     ma = MyAssignment()
 
-    mode_values = [
-        ("1",  "1  : continuation"),
-        ("1n", "1n : continuation + rename"),
-        ("1v", "1v : continuation + versioning"),
-        ("1o", "1o : open file"),
-        ("1c", "1c : recover version"),
-        ("1l", "1l : open latest"),
-        ("1p", "1p : copy and move"),
-        ("1r", "1r : register course"),
-        ("2",  "2  : new versioning collection"),
-        ("2q", "2q : query versioning"),
-        ("2c", "2c : clear versioning"),
-        ("3",  "3  : new capsule"),
-        ("3i", "3i : init with conversation"),
-        ("3r", "3r : init with registration"),
-        ("4",  "4  : settings"),
-        ("5",  "5  : help"),
+    mode_options = [
+        "1  : continuation",
+        "1n : continuation + rename",
+        "1v : continuation + versioning",
+        "1o : open file",
+        "1c : recover version",
+        "1l : open latest",
+        "1p : copy and move",
+        "1r : register course",
+        "2  : new versioning collection",
+        "2q : query versioning",
+        "2c : clear versioning",
+        "3  : new capsule",
+        "3i : init with conversation",
+        "3r : init with registration",
+        "4  : settings",
     ]
-    mode = ui_radio("MyAssignment", "Select a mode:", mode_values)
-    if mode is None:
+    chosen = ui_select("MyAssignment — Select a mode (or type directly e.g. 1v):", mode_options)
+    if chosen is None:
         print("Cancelled.")
         return
+
+    # 直接入力（例: "1v"）か、選択肢の文字列（例: "1v : continuation + versioning"）かを判定
+    if " : " in chosen:
+        mode = chosen.split(" : ")[0].strip()
+    else:
+        mode = chosen.strip()
     print("")
 
-    regex_checker = re.fullmatch(r"\d[a-z|A-Z]?", mode)
+    regex_checker = re.fullmatch(r"\d[a-zA-Z]?", mode)
     if not regex_checker:
-        ui_message("Error", "Invalid mode")
+        print("Invalid mode")
     elif "1" in mode:
         ma.continuation_mode(
             is_renaming="n" in mode,
@@ -1074,11 +1128,8 @@ def main():
         )
     elif "4" in mode:
         ma.settings_mode()
-    elif "5" in mode:
-        ma.help()
-        main()
     else:
-        ui_message("Error", "Invalid mode")
+        print("Invalid mode")
     print("")
 
 
