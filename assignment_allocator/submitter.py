@@ -853,21 +853,19 @@ class MyAssignment:
             if "app_config" in meta_data_json:
                 print("Current app configurations : ")
                 i = 1
-                setting_item_list = []
                 for app_config_item in meta_data_json["app_config"]:
                     if isinstance(meta_data_json["app_config"][app_config_item], bool):
                         print(f"{i} : {app_config_item} - {meta_data_json['app_config'][app_config_item]}")
-                        setting_item_list.append(app_config_item)
-                        i += 1
+                    i += 1
                 is_continue_to_set = True
                 while is_continue_to_set:
                     item_to_set = str(input(f"Input the item you want to set (1-{i-1}): "))
                     while item_to_set not in [f"{j}" for j in range(1,i)]:
                         print("Invalid")
                         item_to_set = str(input(f"Input the item you want to set (1-{i-1}): "))
-                    meta_data_json["app_config"][setting_item_list[int(item_to_set)-1]] = not meta_data_json["app_config"][setting_item_list[int(item_to_set)-1]]
+                    meta_data_json["app_config"][item_to_set] = not meta_data_json["app_config"][item_to_set]
                     is_continue_to_set = False if str(input(f"Edit other app configurations? (y/N) ")) not in ["y", "Y"] else True
-
+                    
                 with open(self.meta_data_path, "w", encoding="utf-8") as f:
                     json.dump(meta_data_json, f, ensure_ascii=False, indent=3)
                 print("Current app configurations : ")
