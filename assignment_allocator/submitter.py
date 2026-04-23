@@ -514,6 +514,28 @@ class MyAssignment:
         self._save_meta()
         print("Successfully registered course")
 
+    def _register_assignment(self) -> None: 
+        deadline = ui_input("Input the deadline for this assignment (e.g. 202412312359 for 2024-12-31 23:59):")
+        deadline = str(deadline).strip()
+        if not re.match(r"\d{12}", deadline):
+            print("Invalid deadline format")
+            return
+        deadline_dt = datetime.datetime.strptime(deadline, "%Y%m%d%H%M")
+        assi_name = ui_input("Input the name for this assignment:")
+        assi_name = str(assi_name).strip()
+        if not assi_name:
+            print("Invalid assignment name")
+            return
+        print(f"Confirmation : Assignment - {assi_name}, Deadline - {deadline_dt}")
+        confirmed = ui_confirm("Confirm registering this assignment?(y/N)")
+        if confirmed not in ["N", "n"]:
+            with open(self.meta_data_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            meta["schedule"] = {deadline: assi_name}
+            with open(self.meta_data_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=3)
+            print("Assignment registered")
+
     # ── continuation モード ────────────────────────────────
 
     def continuation_mode(
@@ -525,6 +547,7 @@ class MyAssignment:
         open_latest: bool = False,
         copy_and_move: bool = False,
         register_course: bool = False,
+        register_assignment: bool = False,
     ) -> None:
         meta = self.meta_data_json
         if len(meta) == 1:
@@ -547,6 +570,8 @@ class MyAssignment:
             self._version_file(meta, used_capsule_name, is_recovering=True)
         elif register_course:
             self.add_register_course()
+        elif register_assignment:
+            self._register_assignment()
         else:
             your_assi_path = ui_input("Drag your assignment here (paste the path):")
             if not your_assi_path:
@@ -1090,6 +1115,7 @@ def main() -> None:
             open_latest="l" in mode,
             copy_and_move="p" in mode,
             register_course="r" in mode,
+            register_assignment="a" in mode,
         )
     elif digit == "2":
         ma.set_versioning_mode(is_query="q" in mode, is_clear="c" in mode)
